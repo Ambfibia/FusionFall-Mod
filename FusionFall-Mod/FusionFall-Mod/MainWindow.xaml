@@ -1,0 +1,27 @@
+﻿<Window x:Class="FusionFall_Mod.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="FusionFall_Mod" Height="400" Width="600">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <!-- Панель выбора версии заголовка -->
+        <StackPanel Orientation="Horizontal">
+            <Label Content="Header Flag:" VerticalAlignment="Center" />
+            <ComboBox x:Name="FlagComboBox" Width="120" Margin="5,0">
+                <ComboBoxItem Content="UnityWeb"/>
+                <ComboBoxItem Content="streamed"/>
+            </ComboBox>
+        </StackPanel>
+        <!-- Основные кнопки и список файлов -->
+        <StackPanel Grid.Row="1" Margin="0,10,0,0">
+            <Button x:Name="PackButton" Content="Pack (.unity3d) [Compressed]" Margin="0,5" Click="PackButton_Click"/>
+            <Button x:Name="PackUncompressedButton" Content="Pack (.unity3d-uncompress) [Uncompressed]" Margin="0,5" Click="PackUncompressedButton_Click"/>
+            <Button x:Name="ExtractButton" Content="Extract Files" Margin="0,5" Click="ExtractButton_Click"/>
+            <Button x:Name="ExtractRawButton" Content="Extract Raw Header" Margin="0,5" Click="ExtractRawButton_Click"/>
+            <ListBox x:Name="FilesListBox" Margin="0,10" Height="150"/>
+        </StackPanel>
+    </Grid>
+</Window>

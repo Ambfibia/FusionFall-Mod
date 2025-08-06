@@ -1,0 +1,1 @@
+test/3/FFHeroes.unity3d_unpacked/*.assets filter=lfs diff=lfs merge=lfs -text
