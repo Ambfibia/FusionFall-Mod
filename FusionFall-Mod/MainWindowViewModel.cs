@@ -5,18 +5,21 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.ComponentModel;
+using System.Windows.Input;
 using Avalonia.Controls;
 using MsBox.Avalonia;
-using ReactiveUI;
-using System.Reactive;
 using FusionFall_Mod.Models;
 using FusionFall_Mod.Utilities;
 
 namespace FusionFall_Mod
 {
-    public class MainWindowViewModel : ReactiveObject
+    public class MainWindowViewModel : INotifyPropertyChanged
     {
         private readonly Window _window;
+        private string _selectedFlag;
+
+        public event PropertyChangedEventHandler? PropertyChanged;
 
         // Список ожидаемых файлов
         private readonly string[] expectedFiles = new string[]
@@ -44,26 +47,37 @@ namespace FusionFall_Mod
         {
             _window = window;
             HeaderFlags = new List<string> { "UnityWeb", "streamed" };
-            SelectedFlag = HeaderFlags[0];
+            _selectedFlag = HeaderFlags[0];
 
             Files = new ObservableCollection<string>();
 
-            PackCommand = ReactiveCommand.CreateFromTask(() => PackUnity3D(true));
-            PackUncompressedCommand = ReactiveCommand.CreateFromTask(() => PackUnity3D(false));
-            ExtractCommand = ReactiveCommand.CreateFromTask(ExtractFiles);
-            ExtractRawCommand = ReactiveCommand.CreateFromTask(ExtractRawHeader);
+            PackCommand = new AsyncCommand(() => PackUnity3D(true));
+            PackUncompressedCommand = new AsyncCommand(() => PackUnity3D(false));
+            ExtractCommand = new AsyncCommand(ExtractFiles);
+            ExtractRawCommand = new AsyncCommand(ExtractRawHeader);
         }
 
         public List<string> HeaderFlags { get; }
 
-        public string SelectedFlag { get; set; }
+        public string SelectedFlag
+        {
+            get => _selectedFlag;
+            set
+            {
+                if (_selectedFlag != value)
+                {
+                    _selectedFlag = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedFlag)));
+                }
+            }
+        }
 
         public ObservableCollection<string> Files { get; }
 
-        public ReactiveCommand<Unit, Unit> PackCommand { get; }
-        public ReactiveCommand<Unit, Unit> PackUncompressedCommand { get; }
-        public ReactiveCommand<Unit, Unit> ExtractCommand { get; }
-        public ReactiveCommand<Unit, Unit> ExtractRawCommand { get; }
+        public ICommand PackCommand { get; }
+        public ICommand PackUncompressedCommand { get; }
+        public ICommand ExtractCommand { get; }
+        public ICommand ExtractRawCommand { get; }
 
         // Упаковка ресурсов в файл unity3d
         private async Task PackUnity3D(bool compress)
