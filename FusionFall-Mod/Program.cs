@@ -1,6 +1,4 @@
-using System;
 using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
 
 namespace FusionFall_Mod
 {

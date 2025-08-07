@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-
 namespace FusionFall_Mod.Utilities
 {
     public static class LzmaHelper

@@ -1,5 +1,3 @@
-using System;
-
 namespace FusionFall_Mod.Models
 {
     /// <summary>
