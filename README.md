@@ -7,7 +7,8 @@ All-in-one modding tool for FusionFall.
 - Packs `.unity3d` archives (experimental and currently unreliable).
 
 ## Roadmap
-- Rewrite the WPF interface using Avalonia UI to improve portability and fix packing issues.
+- fix packing issues.
+- repack feature for sharedassets.
 
 ## Building
 Requires the .NET Framework 4.7.2 developer pack. To verify the project builds, run:
