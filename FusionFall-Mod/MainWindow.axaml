@@ -10,18 +10,17 @@
         <!-- Панель выбора версии заголовка -->
         <StackPanel Orientation="Horizontal">
             <TextBlock Text="Header Flag:" VerticalAlignment="Center"/>
-            <ComboBox x:Name="FlagComboBox" Width="120" Margin="5,0">
-                <ComboBoxItem Content="UnityWeb"/>
-                <ComboBoxItem Content="streamed"/>
-            </ComboBox>
+            <ComboBox Width="120" Margin="5,0"
+                      Items="{Binding HeaderFlags}"
+                      SelectedItem="{Binding SelectedFlag}"/>
         </StackPanel>
         <!-- Основные кнопки и список файлов -->
         <StackPanel Grid.Row="1" Margin="0,10,0,0">
-            <Button x:Name="PackButton" Content="Pack (.unity3d) [Compressed]" Margin="0,5" Click="PackButton_Click"/>
-            <Button x:Name="PackUncompressedButton" Content="Pack (.unity3d-uncompress) [Uncompressed]" Margin="0,5" Click="PackUncompressedButton_Click"/>
-            <Button x:Name="ExtractButton" Content="Extract Files" Margin="0,5" Click="ExtractButton_Click"/>
-            <Button x:Name="ExtractRawButton" Content="Extract Raw Header" Margin="0,5" Click="ExtractRawButton_Click"/>
-            <ListBox x:Name="FilesListBox" Margin="0,10" Height="150"/>
+            <Button Content="Pack (.unity3d) [Compressed]" Margin="0,5" Command="{Binding PackCommand}"/>
+            <Button Content="Pack (.unity3d-uncompress) [Uncompressed]" Margin="0,5" Command="{Binding PackUncompressedCommand}"/>
+            <Button Content="Extract Files" Margin="0,5" Command="{Binding ExtractCommand}"/>
+            <Button Content="Extract Raw Header" Margin="0,5" Command="{Binding ExtractRawCommand}"/>
+            <ListBox Items="{Binding Files}" Margin="0,10" Height="150"/>
         </StackPanel>
     </Grid>
 </Window>
