@@ -221,8 +221,8 @@ namespace FusionFall_Mod
             return mainHeader;
         }
 
-        // Извлечение файлов из пакета
-        private async Task ExtractFiles()
+        // Показ диалога выбора файла Unity
+        private async Task<string?> ShowUnityFileDialog()
         {
             OpenFileDialog ofd = new OpenFileDialog
             {
@@ -235,8 +235,16 @@ namespace FusionFall_Mod
             };
             string[]? result = await ofd.ShowAsync(_window);
             if (result == null || result.Length == 0)
+                return null;
+            return result[0];
+        }
+
+        // Извлечение файлов из пакета
+        private async Task ExtractFiles()
+        {
+            string? inputFilename = await ShowUnityFileDialog();
+            if (inputFilename == null)
                 return;
-            string inputFilename = result[0];
             string? inputDir = Path.GetDirectoryName(inputFilename);
             string outputDir = Path.Combine(inputDir!, "uncompressfiles");
             Directory.CreateDirectory(outputDir);
@@ -294,19 +302,9 @@ namespace FusionFall_Mod
         // Извлечение необработанного заголовка
         private async Task ExtractRawHeader()
         {
-            OpenFileDialog ofd = new OpenFileDialog
-            {
-                AllowMultiple = false,
-                Filters = new List<FileDialogFilter>
-                {
-                    new FileDialogFilter { Name = "Unity web player", Extensions = { "unity3d" } },
-                    new FileDialogFilter { Name = "All Files", Extensions = { "*" } }
-                }
-            };
-            string[]? result = await ofd.ShowAsync(_window);
-            if (result == null || result.Length == 0)
+            string? inputFilename = await ShowUnityFileDialog();
+            if (inputFilename == null)
                 return;
-            string inputFilename = result[0];
             string? inputDir = Path.GetDirectoryName(inputFilename);
             string outputFile = Path.Combine(inputDir!, "uncompress_file");
 
