@@ -21,27 +21,6 @@ namespace FusionFall_Mod
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        // Список ожидаемых файлов
-        private readonly string[] expectedFiles = new string[]
-        {
-            "Assembly - CSharp - first pass.dll",
-            "Assembly - CSharp.dll",
-            "Assembly - UnityScript - first pass.dll",
-            "Mono.Data.Tds.dll",
-            "Mono.Security.dll",
-            "System.Configuration.Install.dll",
-            "System.Configuration.dll",
-            "System.Data.dll",
-            "System.Drawing.dll",
-            "System.EnterpriseServices.dll",
-            "System.Security.dll",
-            "System.Transactions.dll",
-            "System.Xml.dll",
-            "System.dll",
-            "mysql.data.dll",
-            "mainData",
-            "sharedassets0.assets"
-        };
 
         public MainWindowViewModel(Window window)
         {
@@ -104,8 +83,8 @@ namespace FusionFall_Mod
                 return;
             }
 
-            List<FileEntry>? fileEntries = ValidateExpectedFiles(folderPath, expectedFiles);
-            if (fileEntries == null)
+            List<FileEntry>? fileEntries = CollectFileEntries(folderPath);
+            if (fileEntries == null || fileEntries.Count == 0)
             {
                 return;
             }
@@ -141,18 +120,45 @@ namespace FusionFall_Mod
             }
         }
 
-        // Проверка наличия ожидаемых файлов
-        private List<FileEntry>? ValidateExpectedFiles(string folderPath, string[] expected)
+        // Сбор всех файлов из указанной папки
+        private List<FileEntry>? CollectFileEntries(string folderPath)
         {
+            List<string> files = Directory.GetFiles(folderPath).Select(Path.GetFileName).ToList();
+            if (files.Count == 0)
+            {
+                _ = MessageBoxManager.GetMessageBoxStandard("Ошибка", "В выбранной папке нет файлов.").ShowAsync();
+                return null;
+            }
+
+            var scriptAssemblies = files
+                .Where(f => f.StartsWith("Assembly", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(f => f, StringComparer.Ordinal);
+
+            var engineAssemblies = files
+                .Where(f => (f.StartsWith("Mono", StringComparison.OrdinalIgnoreCase) || f.StartsWith("System", StringComparison.OrdinalIgnoreCase)) && !f.StartsWith("Assembly", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(f => f, StringComparer.Ordinal);
+
+            var otherAssemblies = files
+                .Where(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) &&
+                            !f.StartsWith("Assembly", StringComparison.OrdinalIgnoreCase) &&
+                            !f.StartsWith("Mono", StringComparison.OrdinalIgnoreCase) &&
+                            !f.StartsWith("System", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(f => f, StringComparer.Ordinal);
+
+            var assets = files
+                .Where(f => !f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(f => f, StringComparer.Ordinal);
+
+            List<string> ordered = scriptAssemblies
+                .Concat(engineAssemblies)
+                .Concat(otherAssemblies)
+                .Concat(assets)
+                .ToList();
+
             List<FileEntry> entries = new List<FileEntry>();
-            foreach (string fileName in expected)
+            foreach (string fileName in ordered)
             {
                 string fullPath = Path.Combine(folderPath, fileName);
-                if (!File.Exists(fullPath))
-                {
-                    _ = MessageBoxManager.GetMessageBoxStandard("File Not Found", $"Expected file '{fileName}' not found in folder.").ShowAsync();
-                    return null;
-                }
                 long size = new FileInfo(fullPath).Length;
                 entries.Add(new FileEntry(fileName, fullPath, size));
             }
