@@ -96,7 +96,7 @@ namespace FusionFall_Mod
             string selectedFlag = ((ComboBoxItem)FlagComboBox.SelectedItem!).Content!.ToString()!;
             UnityHeader header = new UnityHeader(selectedFlag);
 
-            byte[] headerData = BuildHeaderData(fileEntries, header);
+            byte[] headerData = await BuildHeaderData(fileEntries, header);
             header.FileUnzipSize = headerData.Length;
 
             byte[] compData = compress ? LzmaHelper.CompressData(headerData) : headerData;
@@ -135,7 +135,7 @@ namespace FusionFall_Mod
             return entries;
         }
 
-        private byte[] BuildHeaderData(List<FileEntry> fileEntries, UnityHeader header)
+        private async Task<byte[]> BuildHeaderData(List<FileEntry> fileEntries, UnityHeader header)
         {
             long totalFileDataSize = fileEntries.Sum(entry => entry.Size);
 
@@ -169,7 +169,7 @@ namespace FusionFall_Mod
             int fileDataPos = UnityHeader.DataStartOffset;
             foreach (var fileEntry in fileEntries)
             {
-                byte[] fileBytes = File.ReadAllBytes(fileEntry.FullPath);
+                byte[] fileBytes = await File.ReadAllBytesAsync(fileEntry.FullPath);
                 Buffer.BlockCopy(fileBytes, 0, headerData, fileDataPos, fileBytes.Length);
                 fileDataPos += fileBytes.Length;
             }
