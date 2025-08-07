@@ -1,13 +1,12 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Forms;
-using SevenZip;
-using MessageBox = System.Windows.MessageBox;
+using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using MsBox.Avalonia;
 
 namespace FusionFall_Mod
 {
@@ -135,12 +134,12 @@ namespace FusionFall_Mod
             using (var output = new MemoryStream())
             {
                 SevenZip.Compression.LZMA.Encoder encoder = new SevenZip.Compression.LZMA.Encoder();
-                CoderPropID[] propIDs =
+                SevenZip.CoderPropID[] propIDs =
                 {
-                    CoderPropID.LitContextBits,
-                    CoderPropID.LitPosBits,
-                    CoderPropID.PosStateBits,
-                    CoderPropID.DictionarySize
+                    SevenZip.CoderPropID.LitContextBits,
+                    SevenZip.CoderPropID.LitPosBits,
+                    SevenZip.CoderPropID.PosStateBits,
+                    SevenZip.CoderPropID.DictionarySize
                 };
                 object[] properties =
                 {
@@ -222,70 +221,59 @@ namespace FusionFall_Mod
             FlagComboBox.SelectedIndex = 0;
         }
 
-
-        private void PackButton_Click(object sender, RoutedEventArgs e)
+        private async void PackButton_Click(object? sender, RoutedEventArgs e)
         {
-            PackUnity3D(compress: true);
+            await PackUnity3D(true);
         }
 
-        private void PackUncompressedButton_Click(object sender, RoutedEventArgs e)
+        private async void PackUncompressedButton_Click(object? sender, RoutedEventArgs e)
         {
-            PackUnity3D(compress: false);
+            await PackUnity3D(false);
         }
 
-        private void ExtractButton_Click(object sender, RoutedEventArgs e)
+        private async void ExtractButton_Click(object? sender, RoutedEventArgs e)
         {
-            ExtractFiles();
+            await ExtractFiles();
         }
 
-        private void ExtractRawButton_Click(object sender, RoutedEventArgs e)
+        private async void ExtractRawButton_Click(object? sender, RoutedEventArgs e)
         {
-            ExtractRawHeader();
+            await ExtractRawHeader();
         }
 
-        private void PackUnity3D(bool compress)
+        private async Task PackUnity3D(bool compress)
         {
-            Microsoft.Win32.SaveFileDialog sfd = new Microsoft.Win32.SaveFileDialog
+            SaveFileDialog sfd = new SaveFileDialog
             {
-                Filter = "Unity web player (*.unity3d)|*.unity3d|All Files (*.*)|*.*"
+                Filters = new List<FileDialogFilter>
+                {
+                    new FileDialogFilter { Name = "Unity web player", Extensions = { "unity3d" } },
+                    new FileDialogFilter { Name = "All Files", Extensions = { "*" } }
+                }
             };
 
-            if (sfd.ShowDialog() != true)
+            string? outputFilename = await sfd.ShowAsync(this);
+            if (string.IsNullOrWhiteSpace(outputFilename))
             {
                 return;
             }
-                
-            string outputFilename = sfd.FileName;
 
-            string folderPath = "";
-
-            using (FolderBrowserDialog fbd = new FolderBrowserDialog())
+            OpenFolderDialog ofd = new OpenFolderDialog();
+            string? folderPath = await ofd.ShowAsync(this);
+            if (string.IsNullOrWhiteSpace(folderPath))
             {
-                DialogResult result = fbd.ShowDialog();
-                if (result != System.Windows.Forms.DialogResult.OK ||
-                    string.IsNullOrWhiteSpace(fbd.SelectedPath))
-                {
-                    return;
-                }
-                    
-                folderPath = fbd.SelectedPath;
+                return;
             }
 
-            List<FileEntry> fileEntries = ValidateExpectedFiles(folderPath, expectedFiles);
-
+            List<FileEntry>? fileEntries = ValidateExpectedFiles(folderPath, expectedFiles);
             if (fileEntries == null)
             {
                 return;
             }
 
-            FilesListBox.Items.Clear();
+            FilesListBox.ItemsSource = fileEntries.Select(entry => entry.FileName).ToList();
 
-            foreach (FileEntry entry in fileEntries)
-            {
-                FilesListBox.Items.Add(entry.FileName);
-            }
-
-            string selectedFlag = ((ComboBoxItem)FlagComboBox.SelectedItem).Content.ToString();
+            string selectedFlag = ((ComboBoxItem)FlagComboBox.SelectedItem!).Content!.ToString()!;
             UnityHeader header = new UnityHeader(selectedFlag);
 
             byte[] headerData = BuildHeaderData(fileEntries, header);
@@ -301,26 +289,24 @@ namespace FusionFall_Mod
 
             try
             {
-                File.WriteAllBytes(outputFilename, outputData);
-                MessageBox.Show("Packing completed successfully.", "Success",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                await File.WriteAllBytesAsync(outputFilename, outputData);
+                await MessageBoxManager.GetMessageBoxStandard("Success", "Packing completed successfully.").ShowAsync();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to write output file:\n{ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                await MessageBoxManager.GetMessageBoxStandard("Error", $"Failed to write output file:\n{ex.Message}").ShowAsync();
             }
         }
-        private List<FileEntry> ValidateExpectedFiles(string folderPath, string[] expectedFiles)
+
+        private List<FileEntry>? ValidateExpectedFiles(string folderPath, string[] expected)
         {
             List<FileEntry> entries = new List<FileEntry>();
-            foreach (string fileName in expectedFiles)
+            foreach (string fileName in expected)
             {
                 string fullPath = Path.Combine(folderPath, fileName);
                 if (!File.Exists(fullPath))
                 {
-                    MessageBox.Show($"Expected file '{fileName}' not found in folder.",
-                        "File Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    _ = MessageBoxManager.GetMessageBoxStandard("File Not Found", $"Expected file '{fileName}' not found in folder.").ShowAsync();
                     return null;
                 }
                 long size = new FileInfo(fullPath).Length;
@@ -328,10 +314,11 @@ namespace FusionFall_Mod
             }
             return entries;
         }
+
         private byte[] BuildHeaderData(List<FileEntry> fileEntries, UnityHeader header)
         {
             long totalFileDataSize = fileEntries.Sum(entry => entry.Size);
-            
+
             int finalBytes = 2;
 
             int headerDataSize = UnityHeader.DataStartOffset + (int)totalFileDataSize + finalBytes;
@@ -367,9 +354,9 @@ namespace FusionFall_Mod
                 fileDataPos += fileBytes.Length;
             }
 
-
             return headerData;
         }
+
         private byte[] BuildMainHeader(UnityHeader header, int compressedDataLength)
         {
             byte[] mainHeader = new byte[UnityHeader.MainHeaderSize];
@@ -401,22 +388,29 @@ namespace FusionFall_Mod
 
             return mainHeader;
         }
-        private void ExtractFiles()
+
+        private async Task ExtractFiles()
         {
-            var ofd = new Microsoft.Win32.OpenFileDialog
+            OpenFileDialog ofd = new OpenFileDialog
             {
-                Filter = "Unity web player (*.unity3d)|*.unity3d|All Files (*.*)|*.*"
+                AllowMultiple = false,
+                Filters = new List<FileDialogFilter>
+                {
+                    new FileDialogFilter { Name = "Unity web player", Extensions = { "unity3d" } },
+                    new FileDialogFilter { Name = "All Files", Extensions = { "*" } }
+                }
             };
-            if (ofd.ShowDialog() != true)
+            string[]? result = await ofd.ShowAsync(this);
+            if (result == null || result.Length == 0)
                 return;
-            string inputFilename = ofd.FileName;
-            string inputDir = Path.GetDirectoryName(inputFilename);
-            string outputDir = Path.Combine(inputDir, "uncompressfiles");
+            string inputFilename = result[0];
+            string? inputDir = Path.GetDirectoryName(inputFilename);
+            string outputDir = Path.Combine(inputDir!, "uncompressfiles");
             Directory.CreateDirectory(outputDir);
 
             try
             {
-                byte[] fileContent = File.ReadAllBytes(inputFilename);
+                byte[] fileContent = await File.ReadAllBytesAsync(inputFilename);
                 if (fileContent.Length < UnityHeader.MainHeaderSize)
                     throw new Exception("File too short, invalid header.");
 
@@ -454,47 +448,49 @@ namespace FusionFall_Mod
                     byte[] fileData = new byte[size];
                     Buffer.BlockCopy(decomData, offset, fileData, 0, size);
                     string outPath = Path.Combine(outputDir, filename);
-                    File.WriteAllBytes(outPath, fileData);
+                    await File.WriteAllBytesAsync(outPath, fileData);
                 }
-                MessageBox.Show("Files extracted successfully.", "Success",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                await MessageBoxManager.GetMessageBoxStandard("Success", "Files extracted successfully.").ShowAsync();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Extraction failed:\n{ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                await MessageBoxManager.GetMessageBoxStandard("Error", $"Extraction failed:\n{ex.Message}").ShowAsync();
             }
         }
 
-        private void ExtractRawHeader()
+        private async Task ExtractRawHeader()
         {
-            var ofd = new Microsoft.Win32.OpenFileDialog
+            OpenFileDialog ofd = new OpenFileDialog
             {
-                Filter = "Unity web player (*.unity3d)|*.unity3d|All Files (*.*)|*.*"
+                AllowMultiple = false,
+                Filters = new List<FileDialogFilter>
+                {
+                    new FileDialogFilter { Name = "Unity web player", Extensions = { "unity3d" } },
+                    new FileDialogFilter { Name = "All Files", Extensions = { "*" } }
+                }
             };
-            if (ofd.ShowDialog() != true)
+            string[]? result = await ofd.ShowAsync(this);
+            if (result == null || result.Length == 0)
                 return;
-            string inputFilename = ofd.FileName;
-            string inputDir = Path.GetDirectoryName(inputFilename);
-            string outputFile = Path.Combine(inputDir, "uncompress_file");
+            string inputFilename = result[0];
+            string? inputDir = Path.GetDirectoryName(inputFilename);
+            string outputFile = Path.Combine(inputDir!, "uncompress_file");
 
             try
             {
-                byte[] fileContent = File.ReadAllBytes(inputFilename);
+                byte[] fileContent = await File.ReadAllBytesAsync(inputFilename);
                 if (fileContent.Length < UnityHeader.MainHeaderSize)
                     throw new Exception("Invalid header.");
                 int compDataLength = fileContent.Length - UnityHeader.MainHeaderSize;
                 byte[] compData = new byte[compDataLength];
                 Buffer.BlockCopy(fileContent, UnityHeader.MainHeaderSize, compData, 0, compDataLength);
                 byte[] decomData = LzmaHelper.DecompressData(compData);
-                File.WriteAllBytes(outputFile, decomData);
-                MessageBox.Show("Raw header extracted successfully.", "Success",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                await File.WriteAllBytesAsync(outputFile, decomData);
+                await MessageBoxManager.GetMessageBoxStandard("Success", "Raw header extracted successfully.").ShowAsync();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Extraction failed:\n{ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                await MessageBoxManager.GetMessageBoxStandard("Error", $"Extraction failed:\n{ex.Message}").ShowAsync();
             }
         }
     }

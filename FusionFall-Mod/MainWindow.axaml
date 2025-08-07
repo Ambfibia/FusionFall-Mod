@@ -1,7 +1,7 @@
-﻿<Window x:Class="FusionFall_Mod.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="FusionFall_Mod" Height="400" Width="600">
+        x:Class="FusionFall_Mod.MainWindow"
+        Title="FusionFall_Mod" Width="600" Height="400">
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -9,7 +9,7 @@
         </Grid.RowDefinitions>
         <!-- Панель выбора версии заголовка -->
         <StackPanel Orientation="Horizontal">
-            <Label Content="Header Flag:" VerticalAlignment="Center" />
+            <TextBlock Text="Header Flag:" VerticalAlignment="Center"/>
             <ComboBox x:Name="FlagComboBox" Width="120" Margin="5,0">
                 <ComboBoxItem Content="UnityWeb"/>
                 <ComboBoxItem Content="streamed"/>
