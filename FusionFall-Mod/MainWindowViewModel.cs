@@ -1,12 +1,11 @@
 using Avalonia.Controls;
-using FusionFall_Mod.Models;
+using Avalonia.Platform.Storage;
 using FusionFall_Mod.Core;
+using FusionFall_Mod.Models;
 using MsBox.Avalonia;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.IO;
 using System.Windows.Input;
-using Avalonia.Platform.Storage;
 
 namespace FusionFall_Mod
 {
