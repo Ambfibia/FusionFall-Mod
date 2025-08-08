@@ -17,5 +17,11 @@
     <ItemGroup>
         <ProjectReference Include="..\FusionFall-Mod\FusionFall-Mod.csproj" />
     </ItemGroup>
+	
+	<ItemGroup>
+	  <None Include="..\test\**\*">
+		<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </None>
+	</ItemGroup>
 
 </Project>

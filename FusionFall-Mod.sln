@@ -7,24 +7,25 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FusionFall-Mod.Tests", "FusionFall-Mod.Tests\FusionFall-Mod.Tests.csproj", "{B21B785A-BB86-4FF0-833A-653BA77C7C73}"
 EndProject
 Global
-    GlobalSection(SolutionConfigurationPlatforms) = preSolution
-        Debug|Any CPU = Debug|Any CPU
-        Release|Any CPU = Release|Any CPU
-    EndGlobalSection
-    GlobalSection(ProjectConfigurationPlatforms) = postSolution
-        {58346325-7ADA-4169-B8FF-BC5987E49855}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-        {58346325-7ADA-4169-B8FF-BC5987E49855}.Debug|Any CPU.Build.0 = Debug|Any CPU
-        {58346325-7ADA-4169-B8FF-BC5987E49855}.Release|Any CPU.ActiveCfg = Release|Any CPU
-        {58346325-7ADA-4169-B8FF-BC5987E49855}.Release|Any CPU.Build.0 = Release|Any CPU
-        {B21B785A-BB86-4FF0-833A-653BA77C7C73}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-        {B21B785A-BB86-4FF0-833A-653BA77C7C73}.Debug|Any CPU.Build.0 = Debug|Any CPU
-        {B21B785A-BB86-4FF0-833A-653BA77C7C73}.Release|Any CPU.ActiveCfg = Release|Any CPU
-        {B21B785A-BB86-4FF0-833A-653BA77C7C73}.Release|Any CPU.Build.0 = Release|Any CPU
-    EndGlobalSection
-    GlobalSection(SolutionProperties) = preSolution
-        HideSolutionNode = FALSE
-    EndGlobalSection
-    GlobalSection(ExtensibilityGlobals) = postSolution
-        SolutionGuid = {7C2D1B76-3749-442E-BDBF-C8CDF27C2522}
-    EndGlobalSection
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{58346325-7ADA-4169-B8FF-BC5987E49855}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{58346325-7ADA-4169-B8FF-BC5987E49855}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{58346325-7ADA-4169-B8FF-BC5987E49855}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{58346325-7ADA-4169-B8FF-BC5987E49855}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B21B785A-BB86-4FF0-833A-653BA77C7C73}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B21B785A-BB86-4FF0-833A-653BA77C7C73}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B21B785A-BB86-4FF0-833A-653BA77C7C73}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B21B785A-BB86-4FF0-833A-653BA77C7C73}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		        SolutionGuid = {7C2D1B76-3749-442E-BDBF-C8CDF27C2522}
+		SolutionGuid = {7977B397-FC5B-463F-985C-C40FDDC8A9F7}
+	EndGlobalSection
 EndGlobal
