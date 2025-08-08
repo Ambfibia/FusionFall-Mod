@@ -1,4 +1,5 @@
 using FusionFall_Mod.Models;
+using FusionFall_Mod.Core;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -37,7 +38,7 @@ public class UnityCommandTests
 
         // упаковка сжатого файла
         string repackedPath = Path.Combine(workDir, "repacked.unity3d");
-        await UnityTestHelper.PackAsync(unpackedDir, repackedPath, true, UnityHeader.DefaultFlag);
+        await UnityPackageHelper.PackAsync(unpackedDir, repackedPath, true, UnityHeader.DefaultFlag);
         byte[] originalBytes = await File.ReadAllBytesAsync(originalPath);
         byte[] repackedBytes = await File.ReadAllBytesAsync(repackedPath);
         if (!originalBytes.SequenceEqual(repackedBytes))
@@ -46,8 +47,8 @@ public class UnityCommandTests
             string newExtract = Path.Combine(workDir, "new");
             Directory.CreateDirectory(origExtract);
             Directory.CreateDirectory(newExtract);
-            await UnityTestHelper.ExtractAsync(originalPath, origExtract);
-            await UnityTestHelper.ExtractAsync(repackedPath, newExtract);
+            await UnityPackageHelper.ExtractAsync(originalPath, origExtract);
+            await UnityPackageHelper.ExtractAsync(repackedPath, newExtract);
             var diffs = UnityTestHelper.CompareDirectories(origExtract, newExtract);
             Assert.True(false, "Различия: " + string.Join(", ", diffs));
         }
@@ -55,18 +56,18 @@ public class UnityCommandTests
         // распаковка и сравнение
         string extractDir = Path.Combine(workDir, "extract");
         Directory.CreateDirectory(extractDir);
-        await UnityTestHelper.ExtractAsync(originalPath, extractDir);
+        await UnityPackageHelper.ExtractAsync(originalPath, extractDir);
         var diff2 = UnityTestHelper.CompareDirectories(unpackedDir, extractDir);
         Assert.Empty(diff2);
 
         // извлечение необработанного заголовка и проверка
-        byte[] expectedRaw = await UnityTestHelper.BuildHeaderData(unpackedDir);
-        byte[] actualRaw = await UnityTestHelper.ExtractRawAsync(originalPath);
+        byte[] expectedRaw = await UnityPackageHelper.BuildHeaderData(unpackedDir);
+        byte[] actualRaw = await UnityPackageHelper.ExtractRawAsync(originalPath);
         Assert.Equal(expectedRaw, actualRaw);
 
         // упаковка без сжатия и проверка
         string repackedRaw = Path.Combine(workDir, "repacked_raw.unity3d");
-        await UnityTestHelper.PackAsync(unpackedDir, repackedRaw, false, UnityHeader.DefaultFlag);
+        await UnityPackageHelper.PackAsync(unpackedDir, repackedRaw, false, UnityHeader.DefaultFlag);
         byte[] uncompressedData = UnityTestHelper.ReadUncompressedData(repackedRaw);
         Assert.Equal(expectedRaw, uncompressedData);
     }

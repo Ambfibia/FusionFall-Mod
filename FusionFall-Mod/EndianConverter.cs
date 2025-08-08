@@ -1,4 +1,4 @@
-namespace FusionFall_Mod.Utilities
+namespace FusionFall_Mod.Core
 {
     /// <summary>
     /// Утилитный класс для конвертации целых чисел в Big-Endian и обратно.
