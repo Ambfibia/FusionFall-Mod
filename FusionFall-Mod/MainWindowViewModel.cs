@@ -6,6 +6,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text;
 using System.Windows.Input;
+using Avalonia.Platform.Storage;
 
 namespace FusionFall_Mod
 {
@@ -56,23 +57,29 @@ namespace FusionFall_Mod
         // Упаковка ресурсов в файл unity3d
         private async Task PackUnity3D(bool compress)
         {
-            SaveFileDialog sfd = new SaveFileDialog
+            FilePickerSaveOptions sfo = new FilePickerSaveOptions
             {
-                Filters = new List<FileDialogFilter>
+                FileTypeChoices = new List<FilePickerFileType>
                 {
-                    new FileDialogFilter { Name = "Unity web player", Extensions = { "unity3d" } },
-                    new FileDialogFilter { Name = "All Files", Extensions = { "*" } }
+                    new FilePickerFileType("Unity web player") { Patterns = new[] { "*.unity3d" } },
+                    new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
                 }
             };
 
-            string? outputFilename = await sfd.ShowAsync(_window);
+            IStorageFile? saveFile = await _window.StorageProvider.SaveFilePickerAsync(sfo);
+            string? outputFilename = saveFile?.TryGetLocalPath();
             if (string.IsNullOrWhiteSpace(outputFilename))
             {
                 return;
             }
 
-            OpenFolderDialog ofd = new OpenFolderDialog();
-            string? folderPath = await ofd.ShowAsync(_window);
+            IReadOnlyList<IStorageFolder> folders = await _window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions());
+            if (folders.Count == 0)
+            {
+                return;
+            }
+
+            string? folderPath = folders[0].TryGetLocalPath();
             if (string.IsNullOrWhiteSpace(folderPath))
             {
                 return;
@@ -239,19 +246,19 @@ namespace FusionFall_Mod
         // Показ диалога выбора файла Unity
         private async Task<string?> ShowUnityFileDialog()
         {
-            OpenFileDialog ofd = new OpenFileDialog
+            FilePickerOpenOptions fpo = new FilePickerOpenOptions
             {
                 AllowMultiple = false,
-                Filters = new List<FileDialogFilter>
+                FileTypeFilter = new List<FilePickerFileType>
                 {
-                    new FileDialogFilter { Name = "Unity web player", Extensions = { "unity3d" } },
-                    new FileDialogFilter { Name = "All Files", Extensions = { "*" } }
+                    new FilePickerFileType("Unity web player") { Patterns = new[] { "*.unity3d" } },
+                    new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
                 }
             };
-            string[]? result = await ofd.ShowAsync(_window);
-            if (result == null || result.Length == 0)
+            IReadOnlyList<IStorageFile> files = await _window.StorageProvider.OpenFilePickerAsync(fpo);
+            if (files == null || files.Count == 0)
                 return null;
-            return result[0];
+            return files[0].TryGetLocalPath();
         }
 
         // Извлечение файлов из пакета
