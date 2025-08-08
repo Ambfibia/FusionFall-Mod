@@ -11,7 +11,7 @@
         <StackPanel Orientation="Horizontal">
             <TextBlock Text="Header Flag:" VerticalAlignment="Center"/>
             <ComboBox Width="120" Margin="5,0"
-                      Items="{Binding HeaderFlags}"
+                      ItemsSource="{Binding HeaderFlags}"
                       SelectedItem="{Binding SelectedFlag}"/>
         </StackPanel>
         <!-- Основные кнопки и список файлов -->
@@ -20,7 +20,7 @@
             <Button Content="Pack (.unity3d-uncompress) [Uncompressed]" Margin="0,5" Command="{Binding PackUncompressedCommand}"/>
             <Button Content="Extract Files" Margin="0,5" Command="{Binding ExtractCommand}"/>
             <Button Content="Extract Raw Header" Margin="0,5" Command="{Binding ExtractRawCommand}"/>
-            <ListBox Items="{Binding Files}" Margin="0,10" Height="150"/>
+            <ListBox ItemsSource="{Binding Files}" Margin="0,10" Height="150"/>
         </StackPanel>
     </Grid>
 </Window>
