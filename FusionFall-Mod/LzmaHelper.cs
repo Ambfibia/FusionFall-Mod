@@ -1,4 +1,4 @@
-namespace FusionFall_Mod.Utilities
+namespace FusionFall_Mod.Core
 {
     public static class LzmaHelper
     {
