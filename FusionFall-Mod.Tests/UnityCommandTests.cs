@@ -27,7 +27,9 @@ public class UnityCommandTests
     [MemberData(nameof(Cases))]
     public async Task PackAndExtract(string caseFolder, string fileName)
     {
-        string baseDir = Path.Combine("test", caseFolder);
+        // определяем путь к каталогу тестовых данных относительно корня проекта
+        string rootDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+        string baseDir = Path.Combine(rootDir, "test", caseFolder);
         string originalPath = Path.Combine(baseDir, fileName);
         string unpackedDir = Path.Combine(baseDir, fileName + "_unpacked");
         string workDir = Path.Combine(baseDir, "work");
