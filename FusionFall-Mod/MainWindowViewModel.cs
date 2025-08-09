@@ -3,8 +3,9 @@ using Avalonia.Platform.Storage;
 using FusionFall_Mod.Core;
 using FusionFall_Mod.Models;
 using MsBox.Avalonia;
-using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Text;
 using System.Windows.Input;
 
 namespace FusionFall_Mod
@@ -12,42 +13,28 @@ namespace FusionFall_Mod
     public class MainWindowViewModel : INotifyPropertyChanged
     {
         private readonly Window _window;
-        private string _selectedFlag;
+        private readonly StringBuilder _console = new StringBuilder();
 
         public event PropertyChangedEventHandler? PropertyChanged;
-
 
         public MainWindowViewModel(Window window)
         {
             _window = window;
-            HeaderFlags = new List<string> { "UnityWeb", "streamed" };
-            _selectedFlag = HeaderFlags[0];
-
-            Files = new ObservableCollection<string>();
-
             PackCommand = new AsyncCommand(PackUnity3D);
             ExtractCommand = new AsyncCommand(ExtractFiles);
         }
 
-        public List<string> HeaderFlags { get; }
-
-        public string SelectedFlag
-        {
-            get => _selectedFlag;
-            set
-            {
-                if (_selectedFlag != value)
-                {
-                    _selectedFlag = value;
-                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedFlag)));
-                }
-            }
-        }
-
-        public ObservableCollection<string> Files { get; }
+        public string ConsoleText => _console.ToString();
 
         public ICommand PackCommand { get; }
         public ICommand ExtractCommand { get; }
+
+        // Добавление сообщения в консоль
+        private void Log(string message)
+        {
+            _console.AppendLine(message);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ConsoleText)));
+        }
 
         // Упаковка ресурсов в файл unity3d
         private async Task PackUnity3D()
@@ -87,19 +74,16 @@ namespace FusionFall_Mod
                 return;
             }
 
-            Files.Clear();
-            foreach (var entry in fileEntries)
-            {
-                Files.Add(entry.FileName);
-            }
-
             try
             {
-                await UnityPackageHelper.PackAsync(folderPath, outputFilename, SelectedFlag);
+                Log("Начало упаковки файлов.");
+                await UnityPackageHelper.PackAsync(folderPath, outputFilename, UnityHeader.DefaultFlag);
+                Log("Упаковка завершена.");
                 await MessageBoxManager.GetMessageBoxStandard("Success", "Packing completed successfully.").ShowAsync();
             }
             catch (Exception ex)
             {
+                Log($"Ошибка упаковки: {ex.Message}");
                 await MessageBoxManager.GetMessageBoxStandard("Error", $"Failed to write output file:\n{ex.Message}").ShowAsync();
             }
         }
@@ -136,11 +120,14 @@ namespace FusionFall_Mod
 
             try
             {
+                Log("Начало распаковки файлов.");
                 await UnityPackageHelper.ExtractAsync(inputFilename, outputDir);
+                Log("Распаковка завершена.");
                 await MessageBoxManager.GetMessageBoxStandard("Success", "Files extracted successfully.").ShowAsync();
             }
             catch (Exception ex)
             {
+                Log($"Ошибка распаковки: {ex.Message}");
                 await MessageBoxManager.GetMessageBoxStandard("Error", $"Extraction failed:\n{ex.Message}").ShowAsync();
             }
         }
