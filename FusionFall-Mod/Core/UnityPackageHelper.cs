@@ -142,11 +142,11 @@ namespace FusionFall_Mod.Core
             binaryWriter.Write(new byte[4]);
 
             // версия
-            binaryWriter.Write(header.MajorVersion);
+            binaryWriter.Write(header.Info.MajorVersion);
 
             // строки версий
-            WriteCString(binaryWriter, header.VersionInfo);
-            WriteCString(binaryWriter, header.BuildInfo);
+            WriteCString(binaryWriter, header.Info.VersionInfo);
+            WriteCString(binaryWriter, header.Info.BuildInfo);
 
             // поле SIZE (будет перезаписано после вычисления last_offset)
             long sizePosition = outputStream.Position;
@@ -270,9 +270,9 @@ namespace FusionFall_Mod.Core
                     HeaderInfo? info = JsonSerializer.Deserialize<HeaderInfo>(await File.ReadAllTextAsync(jsonPath));
                     if (info != null)
                     {
-                        header.MajorVersion = info.MajorVersion;
-                        header.VersionInfo = info.VersionInfo;
-                        header.BuildInfo = info.BuildInfo;
+                        header.Info.MajorVersion = info.MajorVersion;
+                        header.Info.VersionInfo = info.VersionInfo;
+                        header.Info.BuildInfo = info.BuildInfo;
                     }
                 }
                 catch
