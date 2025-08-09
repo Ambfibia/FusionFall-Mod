@@ -14,42 +14,99 @@ namespace FusionFall_Mod.Core
         /// </summary>
         public static List<FileEntry> CollectFileEntries(string folderPath)
         {
-            List<string> files = Directory.GetFiles(folderPath).Select(Path.GetFileName).ToList();
-
-            var scriptAssemblies = files
-                .Where(f => f.StartsWith("Assembly", StringComparison.OrdinalIgnoreCase))
-                .OrderBy(f => f, StringComparer.Ordinal);
-
-            var engineAssemblies = files
-                .Where(f => (f.StartsWith("Mono", StringComparison.OrdinalIgnoreCase) || f.StartsWith("System", StringComparison.OrdinalIgnoreCase)) && !f.StartsWith("Assembly", StringComparison.OrdinalIgnoreCase))
-                .OrderBy(f => f, StringComparer.Ordinal);
-
-            var otherAssemblies = files
-                .Where(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) &&
-                            !f.StartsWith("Assembly", StringComparison.OrdinalIgnoreCase) &&
-                            !f.StartsWith("Mono", StringComparison.OrdinalIgnoreCase) &&
-                            !f.StartsWith("System", StringComparison.OrdinalIgnoreCase))
-                .OrderBy(f => f, StringComparer.Ordinal);
-
-            var assets = files
-                .Where(f => !f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
-                .OrderBy(f => f, StringComparer.Ordinal);
-
-            List<string> ordered = scriptAssemblies
-                .Concat(engineAssemblies)
-                .Concat(otherAssemblies)
-                .Concat(assets)
+            // Собираем имена файлов (только в корне папки) и исключаем служебный header.json
+            var files = Directory.EnumerateFiles(folderPath)
+                .Select(Path.GetFileName)
+                .Where(n => n != null && !string.Equals(n, "header.json", StringComparison.OrdinalIgnoreCase))
+                .Cast<string>()
                 .ToList();
 
-            List<FileEntry> entries = new List<FileEntry>();
-            foreach (string fileName in ordered)
+            // Категория для приоритета сортировки
+            static int Category(string name)
+            {
+                // DLL группы
+                bool isDll = name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+                if (isDll)
+                {
+                    if (name.StartsWith("Assembly", StringComparison.OrdinalIgnoreCase)) return 0; // скриптовые
+                    if (name.StartsWith("Mono", StringComparison.OrdinalIgnoreCase) ||
+                        name.StartsWith("System", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(name, "mscorlib.dll", StringComparison.OrdinalIgnoreCase) ||
+                        name.StartsWith("UnityEngine", StringComparison.OrdinalIgnoreCase))
+                        return 1; // «движковые/системные»
+                    return 2;     // прочие dll
+                }
+
+                // Активы
+                string lower = name.ToLowerInvariant();
+                if (lower == "maindata") return 3;
+                if (lower.StartsWith("level")) return 4;
+                if (lower.StartsWith("sharedassets")) return 5;
+                if (lower.StartsWith("resources")) return 6;
+
+                return 7; // остальное
+            }
+
+            // Натуральный компаратор: игнор регистра + числа как числа
+            var natural = NaturalComparer.Instance;
+
+            var ordered = files
+                .OrderBy(Category)               // сначала по категории
+                .ThenBy(f => f, natural)         // внутри категории — натуральная сортировка
+                .ToList();
+
+            // Собираем FileEntry
+            return ordered.Select(fileName =>
             {
                 string fullPath = Path.Combine(folderPath, fileName);
                 long size = new FileInfo(fullPath).Length;
-                entries.Add(new FileEntry(fileName, fullPath, size));
-            }
-            return entries;
+                return new FileEntry(fileName, fullPath, size);
+            }).ToList();
         }
+
+        // ----------------- Вспомогательный компаратор -----------------
+        sealed class NaturalComparer : IComparer<string>
+        {
+            public static readonly NaturalComparer Instance = new();
+
+            public int Compare(string? x, string? y)
+            {
+                if (ReferenceEquals(x, y)) return 0;
+                if (x is null) return -1;
+                if (y is null) return 1;
+
+                int i = 0, j = 0;
+                while (i < x.Length && j < y.Length)
+                {
+                    char cx = x[i], cy = y[j];
+                    bool dx = char.IsDigit(cx), dy = char.IsDigit(cy);
+
+                    if (dx && dy)
+                    {
+                        // сравнение числовых блоков
+                        long vx = 0, vy = 0;
+                        int si = i, sj = j;
+                        while (i < x.Length && char.IsDigit(x[i])) { vx = vx * 10 + (x[i] - '0'); i++; }
+                        while (j < y.Length && char.IsDigit(y[j])) { vy = vy * 10 + (y[j] - '0'); j++; }
+                        int cmpNum = vx.CompareTo(vy);
+                        if (cmpNum != 0) return cmpNum;
+
+                        // если числа равны — сравним длину (меньше ведущих нулей → короче → раньше)
+                        int lenX = i - si, lenY = j - sj;
+                        if (lenX != lenY) return lenX.CompareTo(lenY);
+                        continue;
+                    }
+
+                    // регистронезависимое сравнение
+                    int cmp = char.ToUpperInvariant(cx).CompareTo(char.ToUpperInvariant(cy));
+                    if (cmp != 0) return cmp;
+
+                    i++; j++;
+                }
+                return (x.Length - i).CompareTo(y.Length - j);
+            }
+        }
+
 
         /// <summary>
         /// Формирование данных заголовка без сжатия.
@@ -140,14 +197,14 @@ namespace FusionFall_Mod.Core
             // u32 0
             writer.Write(0u);
 
-            // версия
+            // версия (major)
             writer.Write(header.Info.MajorVersion);
 
-            // версии (C-строки)
+            // строки версий (C-строки)
             WriteCString(writer, header.Info.VersionInfo);
             WriteCString(writer, header.Info.BuildInfo);
 
-            // SIZE/LastOffset (BE u32) — заполним позже
+            // SIZE/LastOffset (BE u32) — placeholder
             long sizePos = outputStream.Position;
             writer.Write(new byte[4]);
 
@@ -155,9 +212,9 @@ namespace FusionFall_Mod.Core
             writer.Write((byte)0);
             writer.Write((byte)0);
 
-            // место для first_offset (BE u16)
+            // first_offset (BE u16) — placeholder
             long firstOffsetPos = outputStream.Position;
-            WriteBEUInt16(writer, 0); // placeholder
+            WriteBEUInt16(writer, 0);
 
             // служебные поля
             writer.Write(EndianConverter.ToBigEndian(1));
@@ -165,43 +222,44 @@ namespace FusionFall_Mod.Core
             writer.Write(EndianConverter.ToBigEndian(compressedData.Length));
             writer.Write(EndianConverter.ToBigEndian(uncompressedSize));
 
-            // дублирующий last_offset — тоже заполним позже
+            // дублирующий last_offset — placeholder
             long lastOffset2Pos = outputStream.Position;
             writer.Write(new byte[4]);
 
             // завершающий байт 0
             writer.Write((byte)0);
 
-            // === Новый расчёт смещения ===
+            // === Пересчёт смещения ===
             int endOfHeader = (int)outputStream.Position;
-
-            // «хотим минимум 1 байт паддинга» → затем выравниваем до 4 байт
-            int offset = Align(endOfHeader + 1, 4);
+            // минимум 1 байт паддинга, затем выравниваем по 4 → даёт 60 при endOfHeader=56
+            int firstOffset = Align(endOfHeader + 1, 4);
 
             // проставляем first_offset (BE u16)
             long cur = outputStream.Position;
             outputStream.Position = firstOffsetPos;
-            WriteBEUInt16(writer, (ushort)offset);
+            WriteBEUInt16(writer, (ushort)firstOffset);
             outputStream.Position = cur;
 
-            // считаем last_offset = offset + compressedData.Length
-            int finalLastOffset = offset + compressedData.Length;
+            // считаем last_offset = firstOffset + compressedData.Length
+            int finalLastOffset = firstOffset + compressedData.Length;
 
-            // проставляем оба last_offset (оба в BE u32)
+            // проставляем оба last_offset (оба BE u32)
             outputStream.Position = sizePos;
             writer.Write(EndianConverter.ToBigEndian(finalLastOffset));
             outputStream.Position = lastOffset2Pos;
             writer.Write(EndianConverter.ToBigEndian(finalLastOffset));
             outputStream.Position = cur;
 
-            // паддинг до offset
-            while (outputStream.Position < offset) writer.Write((byte)0);
+            // паддинг до firstOffset
+            while (outputStream.Position < firstOffset)
+                writer.Write((byte)0);
 
             // сжатые данные
             writer.Write(compressedData);
 
             return outputStream.ToArray();
         }
+
 
 
         /// <summary>
