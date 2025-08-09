@@ -1,5 +1,6 @@
 using FusionFall_Mod.Models;
 using System.Text;
+using System.Text.Json;
 
 namespace FusionFall_Mod.Core
 {
@@ -128,23 +129,24 @@ namespace FusionFall_Mod.Core
         /// <summary>
         /// Формирование полного файла UnityWeb.
         /// </summary>
-        private static byte[] BuildUnityWebFile(byte[] compressedData, int uncompressedSize, string versionInfo, string buildInfo, int offset)
+        private static byte[] BuildUnityWebFile(byte[] compressedData, int uncompressedSize, UnityHeader header)
         {
+            int offset = header.FirstOffset;
             using var outputStream = new MemoryStream(offset + compressedData.Length + 64);
             using var binaryWriter = new BinaryWriter(outputStream, Encoding.ASCII, leaveOpen: true);
 
             // запись сигнатуры
-            binaryWriter.Write(Encoding.ASCII.GetBytes("UnityWeb"));
+            binaryWriter.Write(Encoding.ASCII.GetBytes(header.FlagFile));
 
             // u32 0
             binaryWriter.Write(new byte[4]);
 
             // версия
-            binaryWriter.Write((byte)2);
+            binaryWriter.Write(header.MajorVersion);
 
             // строки версий
-            WriteCString(binaryWriter, versionInfo);
-            WriteCString(binaryWriter, buildInfo);
+            WriteCString(binaryWriter, header.VersionInfo);
+            WriteCString(binaryWriter, header.BuildInfo);
 
             // поле SIZE (будет перезаписано после вычисления last_offset)
             long sizePosition = outputStream.Position;
@@ -208,6 +210,20 @@ namespace FusionFall_Mod.Core
         }
 
         /// <summary>
+        /// Чтение строки до нулевого байта.
+        /// </summary>
+        private static string ReadCString(BinaryReader reader)
+        {
+            List<byte> bytes = new List<byte>();
+            byte b;
+            while ((b = reader.ReadByte()) != 0)
+            {
+                bytes.Add(b);
+            }
+            return Encoding.UTF8.GetString(bytes.ToArray());
+        }
+
+        /// <summary>
         /// Запись 16-битного числа в Big-Endian.
         /// </summary>
         private static void WriteBEUInt16(BinaryWriter writer, ushort value)
@@ -232,11 +248,11 @@ namespace FusionFall_Mod.Core
         /// <summary>
         /// Упаковка файлов в формат unity3d.
         /// </summary>
-        public static async Task PackAsync(List<FileEntry> fileEntries, string outputFile, string flag)
+        public static async Task PackAsync(List<FileEntry> fileEntries, string outputFile, UnityHeader header)
         {
             byte[] headerData = await BuildHeaderData(fileEntries);
             byte[] compressedData = LzmaHelper.CompressData(headerData);
-            byte[] finalFile = BuildUnityWebFile(compressedData, headerData.Length, "fusion-2.x.x", "2.5.4b5", UnityHeader.MainHeaderSize);
+            byte[] finalFile = BuildUnityWebFile(compressedData, headerData.Length, header);
             await File.WriteAllBytesAsync(outputFile, finalFile);
         }
 
@@ -245,8 +261,29 @@ namespace FusionFall_Mod.Core
         /// </summary>
         public static async Task PackAsync(string folderPath, string outputFile, string flag)
         {
+            UnityHeader header = new UnityHeader(flag);
+            string jsonPath = Path.Combine(folderPath, "header.json");
+            if (File.Exists(jsonPath))
+            {
+                try
+                {
+                    HeaderInfo? info = JsonSerializer.Deserialize<HeaderInfo>(await File.ReadAllTextAsync(jsonPath));
+                    if (info != null)
+                    {
+                        header.MajorVersion = info.MajorVersion;
+                        header.VersionInfo = info.VersionInfo;
+                        header.BuildInfo = info.BuildInfo;
+                    }
+                }
+                catch
+                {
+                    // если JSON некорректен, используем значения по умолчанию
+                }
+            }
+
             List<FileEntry> entries = CollectFileEntries(folderPath);
-            await PackAsync(entries, outputFile, flag);
+            entries.RemoveAll(e => e.FileName.Equals("header.json", StringComparison.OrdinalIgnoreCase));
+            await PackAsync(entries, outputFile, header);
         }
 
         /// <summary>
@@ -255,8 +292,29 @@ namespace FusionFall_Mod.Core
         public static async Task ExtractAsync(string inputFile, string outputDir)
         {
             byte[] fileContent = await File.ReadAllBytesAsync(inputFile);
+            using var stream = new MemoryStream(fileContent);
+            using var reader = new BinaryReader(stream, Encoding.ASCII, leaveOpen: true);
+
+            // чтение заголовка
+            _ = Encoding.ASCII.GetString(reader.ReadBytes(8));
+            reader.ReadUInt32();
+            byte major = reader.ReadByte();
+            string versionInfo = ReadCString(reader);
+            string buildInfo = ReadCString(reader);
+
+            HeaderInfo info = new HeaderInfo
+            {
+                MajorVersion = major,
+                VersionInfo = versionInfo,
+                BuildInfo = buildInfo
+            };
+            string jsonText = JsonSerializer.Serialize(info, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(Path.Combine(outputDir, "header.json"), jsonText);
+
+            // переход к сжатым данным
+            stream.Position = UnityHeader.MainHeaderSize;
             byte[] compData = new byte[fileContent.Length - UnityHeader.MainHeaderSize];
-            Buffer.BlockCopy(fileContent, UnityHeader.MainHeaderSize, compData, 0, compData.Length);
+            Buffer.BlockCopy(fileContent, (int)stream.Position, compData, 0, compData.Length);
             byte[] decomData = LzmaHelper.DecompressData(compData);
 
             int numFiles = EndianConverter.FromBigEndian(decomData, 0);
