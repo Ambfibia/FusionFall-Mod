@@ -146,8 +146,9 @@ namespace FusionFall_Mod.Core
             WriteCString(binaryWriter, versionInfo);
             WriteCString(binaryWriter, buildInfo);
 
-            // размер распакованных данных
-            binaryWriter.Write(EndianConverter.ToBigEndian(uncompressedSize));
+            // поле SIZE (будет перезаписано после вычисления last_offset)
+            long sizePosition = outputStream.Position;
+            binaryWriter.Write(new byte[4]);
 
             // u16 0
             binaryWriter.Write(new byte[2]);
@@ -161,8 +162,7 @@ namespace FusionFall_Mod.Core
             binaryWriter.Write(EndianConverter.ToBigEndian(1));
             binaryWriter.Write(EndianConverter.ToBigEndian(compressedData.Length));
             binaryWriter.Write(EndianConverter.ToBigEndian(uncompressedSize));
-            int lastOffset = offset + compressedData.Length;
-            binaryWriter.Write(EndianConverter.ToBigEndian(lastOffset));
+            binaryWriter.Write(EndianConverter.ToBigEndian(offset + compressedData.Length));
             binaryWriter.Write((byte)0);
 
             if (outputStream.Position > offset)
@@ -181,6 +181,12 @@ namespace FusionFall_Mod.Core
                 binaryWriter.Write((byte)0);
                 outputStream.Position = current;
             }
+
+            int finalLastOffset = offset + compressedData.Length;
+            long tempPosition = outputStream.Position;
+            outputStream.Position = sizePosition;
+            binaryWriter.Write(EndianConverter.ToBigEndian(finalLastOffset));
+            outputStream.Position = tempPosition;
 
             while (outputStream.Position < offset)
             {
