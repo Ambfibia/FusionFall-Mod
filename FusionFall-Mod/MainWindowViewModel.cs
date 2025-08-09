@@ -25,10 +25,8 @@ namespace FusionFall_Mod
 
             Files = new ObservableCollection<string>();
 
-            PackCommand = new AsyncCommand(() => PackUnity3D(true));
-            PackUncompressedCommand = new AsyncCommand(() => PackUnity3D(false));
+            PackCommand = new AsyncCommand(PackUnity3D);
             ExtractCommand = new AsyncCommand(ExtractFiles);
-            ExtractRawCommand = new AsyncCommand(ExtractRawHeader);
         }
 
         public List<string> HeaderFlags { get; }
@@ -49,12 +47,10 @@ namespace FusionFall_Mod
         public ObservableCollection<string> Files { get; }
 
         public ICommand PackCommand { get; }
-        public ICommand PackUncompressedCommand { get; }
         public ICommand ExtractCommand { get; }
-        public ICommand ExtractRawCommand { get; }
 
         // Упаковка ресурсов в файл unity3d
-        private async Task PackUnity3D(bool compress)
+        private async Task PackUnity3D()
         {
             FilePickerSaveOptions sfo = new FilePickerSaveOptions
             {
@@ -99,7 +95,7 @@ namespace FusionFall_Mod
 
             try
             {
-                await UnityPackageHelper.PackAsync(fileEntries, outputFilename, compress, SelectedFlag);
+                await UnityPackageHelper.PackAsync(fileEntries, outputFilename, SelectedFlag);
                 await MessageBoxManager.GetMessageBoxStandard("Success", "Packing completed successfully.").ShowAsync();
             }
             catch (Exception ex)
@@ -147,26 +143,6 @@ namespace FusionFall_Mod
             }
         }
 
-        // Извлечение необработанного заголовка
-        private async Task ExtractRawHeader()
-        {
-            string? inputFilename = await ShowUnityFileDialog();
-            if (inputFilename == null)
-                return;
-            string? inputDir = Path.GetDirectoryName(inputFilename);
-            string outputFile = Path.Combine(inputDir!, "uncompress_file");
-
-            try
-            {
-                byte[] decomData = await UnityPackageHelper.ExtractRawAsync(inputFilename);
-                await File.WriteAllBytesAsync(outputFile, decomData);
-                await MessageBoxManager.GetMessageBoxStandard("Success", "Raw header extracted successfully.").ShowAsync();
-            }
-            catch (Exception ex)
-            {
-                await MessageBoxManager.GetMessageBoxStandard("Error", $"Extraction failed:\n{ex.Message}").ShowAsync();
-            }
-        }
     }
 }
 

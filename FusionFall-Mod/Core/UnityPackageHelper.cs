@@ -232,10 +232,10 @@ namespace FusionFall_Mod.Core
         /// <summary>
         /// Упаковка файлов в формат unity3d.
         /// </summary>
-        public static async Task PackAsync(List<FileEntry> fileEntries, string outputFile, bool compress, string flag)
+        public static async Task PackAsync(List<FileEntry> fileEntries, string outputFile, string flag)
         {
             byte[] headerData = await BuildHeaderData(fileEntries);
-            byte[] compressedData = compress ? LzmaHelper.CompressData(headerData) : headerData;
+            byte[] compressedData = LzmaHelper.CompressData(headerData);
             byte[] finalFile = BuildUnityWebFile(compressedData, headerData.Length, "fusion-2.x.x", "2.5.4b5", UnityHeader.MainHeaderSize);
             await File.WriteAllBytesAsync(outputFile, finalFile);
         }
@@ -243,10 +243,10 @@ namespace FusionFall_Mod.Core
         /// <summary>
         /// Упаковка файлов из папки.
         /// </summary>
-        public static async Task PackAsync(string folderPath, string outputFile, bool compress, string flag)
+        public static async Task PackAsync(string folderPath, string outputFile, string flag)
         {
             List<FileEntry> entries = CollectFileEntries(folderPath);
-            await PackAsync(entries, outputFile, compress, flag);
+            await PackAsync(entries, outputFile, flag);
         }
 
         /// <summary>
@@ -283,15 +283,5 @@ namespace FusionFall_Mod.Core
             }
         }
 
-        /// <summary>
-        /// Извлечение необработанного заголовка.
-        /// </summary>
-        public static async Task<byte[]> ExtractRawAsync(string inputFile)
-        {
-            byte[] fileContent = await File.ReadAllBytesAsync(inputFile);
-            byte[] compData = new byte[fileContent.Length - UnityHeader.MainHeaderSize];
-            Buffer.BlockCopy(fileContent, UnityHeader.MainHeaderSize, compData, 0, compData.Length);
-            return LzmaHelper.DecompressData(compData);
-        }
     }
 }
