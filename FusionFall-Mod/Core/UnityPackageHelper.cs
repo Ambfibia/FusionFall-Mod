@@ -308,6 +308,8 @@ namespace FusionFall_Mod.Core
                 VersionInfo = versionInfo,
                 BuildInfo = buildInfo
             };
+            // создание папки для сохранения JSON
+            Directory.CreateDirectory(outputDir);
             string jsonText = JsonSerializer.Serialize(info, new JsonSerializerOptions { WriteIndented = true });
             await File.WriteAllTextAsync(Path.Combine(outputDir, "header.json"), jsonText);
 
