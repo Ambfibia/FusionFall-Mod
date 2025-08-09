@@ -7,18 +7,12 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <!-- Панель выбора версии заголовка -->
-        <StackPanel Orientation="Horizontal">
-            <TextBlock Text="Header Flag:" VerticalAlignment="Center"/>
-            <ComboBox Width="120" Margin="5,0"
-                      ItemsSource="{Binding HeaderFlags}"
-                      SelectedItem="{Binding SelectedFlag}"/>
-        </StackPanel>
-        <!-- Основные кнопки и список файлов -->
-        <StackPanel Grid.Row="1" Margin="0,10,0,0">
+        <!-- Кнопки и консоль вывода -->
+        <StackPanel>
             <Button Content="Pack (.unity3d) [Compressed]" Margin="0,5" Command="{Binding PackCommand}"/>
             <Button Content="Extract Files" Margin="0,5" Command="{Binding ExtractCommand}"/>
-            <ListBox ItemsSource="{Binding Files}" Margin="0,10" Height="150"/>
         </StackPanel>
+        <TextBox Grid.Row="1" Margin="0,10,0,0" Text="{Binding ConsoleText}" IsReadOnly="True"
+                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
     </Grid>
 </Window>
