@@ -360,6 +360,10 @@ namespace FusionFall_Mod.Core
 
             // 1) Заголовок
             string flag = Encoding.ASCII.GetString(reader.ReadBytes(8)); // "UnityWeb" или "streamed"
+            if (flag != UnityHeader.DefaultFlag && flag != UnityHeader.RetroFlag)
+            {
+                throw new InvalidDataException("Неизвестный заголовок.");
+            }
             _ = reader.ReadUInt32();                                     // u32 0
             byte major = reader.ReadByte();                              // версия формата (2 или 3)
             string versionInfo = ReadCString(reader);
