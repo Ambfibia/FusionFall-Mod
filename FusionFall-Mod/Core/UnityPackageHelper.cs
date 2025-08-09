@@ -131,73 +131,78 @@ namespace FusionFall_Mod.Core
         /// </summary>
         private static byte[] BuildUnityWebFile(byte[] compressedData, int uncompressedSize, UnityHeader header)
         {
-            int offset = header.FirstOffset;
-            using var outputStream = new MemoryStream(offset + compressedData.Length + 64);
-            using var binaryWriter = new BinaryWriter(outputStream, Encoding.ASCII, leaveOpen: true);
+            using var outputStream = new MemoryStream(1024 + compressedData.Length);
+            using var writer = new BinaryWriter(outputStream, Encoding.ASCII, leaveOpen: true);
 
-            // запись сигнатуры
-            binaryWriter.Write(Encoding.ASCII.GetBytes(header.FlagFile));
+            // сигнатура
+            writer.Write(Encoding.ASCII.GetBytes(header.FlagFile)); // 8 байт
 
             // u32 0
-            binaryWriter.Write(new byte[4]);
+            writer.Write(0u);
 
             // версия
-            binaryWriter.Write(header.Info.MajorVersion);
+            writer.Write(header.Info.MajorVersion);
 
-            // строки версий
-            WriteCString(binaryWriter, header.Info.VersionInfo);
-            WriteCString(binaryWriter, header.Info.BuildInfo);
+            // версии (C-строки)
+            WriteCString(writer, header.Info.VersionInfo);
+            WriteCString(writer, header.Info.BuildInfo);
 
-            // поле SIZE (будет перезаписано после вычисления last_offset)
-            long sizePosition = outputStream.Position;
-            binaryWriter.Write(new byte[4]);
+            // SIZE/LastOffset (BE u32) — заполним позже
+            long sizePos = outputStream.Position;
+            writer.Write(new byte[4]);
 
             // u16 0
-            binaryWriter.Write(new byte[2]);
+            writer.Write((byte)0);
+            writer.Write((byte)0);
 
-            long offsetPosition = outputStream.Position;
-            // смещение до сжатых данных
-            WriteBEUInt16(binaryWriter, (ushort)offset);
+            // место для first_offset (BE u16)
+            long firstOffsetPos = outputStream.Position;
+            WriteBEUInt16(writer, 0); // placeholder
 
             // служебные поля
-            binaryWriter.Write(EndianConverter.ToBigEndian(1));
-            binaryWriter.Write(EndianConverter.ToBigEndian(1));
-            binaryWriter.Write(EndianConverter.ToBigEndian(compressedData.Length));
-            binaryWriter.Write(EndianConverter.ToBigEndian(uncompressedSize));
-            binaryWriter.Write(EndianConverter.ToBigEndian(offset + compressedData.Length));
-            binaryWriter.Write((byte)0);
+            writer.Write(EndianConverter.ToBigEndian(1));
+            writer.Write(EndianConverter.ToBigEndian(1));
+            writer.Write(EndianConverter.ToBigEndian(compressedData.Length));
+            writer.Write(EndianConverter.ToBigEndian(uncompressedSize));
 
-            if (outputStream.Position > offset)
-            {
-                offset = Align((int)outputStream.Position, 16);
-                long current = outputStream.Position;
-                outputStream.Position = offsetPosition;
-                WriteBEUInt16(binaryWriter, (ushort)offset);
-                outputStream.Position = current;
+            // дублирующий last_offset — тоже заполним позже
+            long lastOffset2Pos = outputStream.Position;
+            writer.Write(new byte[4]);
 
-                current = outputStream.Position;
-                outputStream.Position = offsetPosition + 2 + 4 + 4;
-                binaryWriter.Write(EndianConverter.ToBigEndian(compressedData.Length));
-                binaryWriter.Write(EndianConverter.ToBigEndian(uncompressedSize));
-                binaryWriter.Write(EndianConverter.ToBigEndian(offset + compressedData.Length));
-                binaryWriter.Write((byte)0);
-                outputStream.Position = current;
-            }
+            // завершающий байт 0
+            writer.Write((byte)0);
 
+            // === Новый расчёт смещения ===
+            int endOfHeader = (int)outputStream.Position;
+
+            // «хотим минимум 1 байт паддинга» → затем выравниваем до 4 байт
+            int offset = Align(endOfHeader + 1, 4);
+
+            // проставляем first_offset (BE u16)
+            long cur = outputStream.Position;
+            outputStream.Position = firstOffsetPos;
+            WriteBEUInt16(writer, (ushort)offset);
+            outputStream.Position = cur;
+
+            // считаем last_offset = offset + compressedData.Length
             int finalLastOffset = offset + compressedData.Length;
-            long tempPosition = outputStream.Position;
-            outputStream.Position = sizePosition;
-            binaryWriter.Write(EndianConverter.ToBigEndian(finalLastOffset));
-            outputStream.Position = tempPosition;
 
-            while (outputStream.Position < offset)
-            {
-                binaryWriter.Write((byte)0);
-            }
+            // проставляем оба last_offset (оба в BE u32)
+            outputStream.Position = sizePos;
+            writer.Write(EndianConverter.ToBigEndian(finalLastOffset));
+            outputStream.Position = lastOffset2Pos;
+            writer.Write(EndianConverter.ToBigEndian(finalLastOffset));
+            outputStream.Position = cur;
 
-            binaryWriter.Write(compressedData);
+            // паддинг до offset
+            while (outputStream.Position < offset) writer.Write((byte)0);
+
+            // сжатые данные
+            writer.Write(compressedData);
+
             return outputStream.ToArray();
         }
+
 
         /// <summary>
         /// Запись строки с завершающим нулём.
@@ -295,53 +300,95 @@ namespace FusionFall_Mod.Core
             using var stream = new MemoryStream(fileContent);
             using var reader = new BinaryReader(stream, Encoding.ASCII, leaveOpen: true);
 
-            // чтение заголовка
-            _ = Encoding.ASCII.GetString(reader.ReadBytes(8));
-            reader.ReadUInt32();
-            byte major = reader.ReadByte();
+            // 1) Заголовок
+            string flag = Encoding.ASCII.GetString(reader.ReadBytes(8)); // "UnityWeb" или "streamed"
+            _ = reader.ReadUInt32();                                     // u32 0
+            byte major = reader.ReadByte();                              // версия формата (2 или 3)
             string versionInfo = ReadCString(reader);
             string buildInfo = ReadCString(reader);
 
+            // Поле SIZE/LastOffset (BE u32) — заглушка, но читаем для целостности
+            int lastOffsetBE1 = ReadBEInt32(reader);
+
+            // u16 0
+            _ = ReadBEUInt16(reader);
+
+            // Смещение до сжатых данных (BE u16) — ключевое поле
+            ushort firstOffset = ReadBEUInt16(reader);
+
+            // Служебные поля
+            _ = ReadBEInt32(reader); // 1
+            _ = ReadBEInt32(reader); // 1
+            int compressedSize = ReadBEInt32(reader);
+            int uncompressedSize = ReadBEInt32(reader);
+            int lastOffsetBE2 = ReadBEInt32(reader);
+            _ = reader.ReadByte(); // 0
+
+            // 2) Сохраняем header.json (как у вас было)
             HeaderInfo info = new HeaderInfo
             {
                 MajorVersion = major,
                 VersionInfo = versionInfo,
                 BuildInfo = buildInfo
             };
-            // создание папки для сохранения JSON
             Directory.CreateDirectory(outputDir);
             string jsonText = JsonSerializer.Serialize(info, new JsonSerializerOptions { WriteIndented = true });
             await File.WriteAllTextAsync(Path.Combine(outputDir, "header.json"), jsonText);
 
-            // переход к сжатым данным
-            stream.Position = UnityHeader.MainHeaderSize;
-            byte[] compData = new byte[fileContent.Length - UnityHeader.MainHeaderSize];
-            Buffer.BlockCopy(fileContent, (int)stream.Position, compData, 0, compData.Length);
+            // 3) Забираем ровно compressedSize байт начиная с firstOffset
+            int start = firstOffset;
+            if (start < 0 || start >= fileContent.Length) throw new InvalidDataException("Некорректное смещение до данных.");
+            if (compressedSize <= 0 || start + compressedSize > fileContent.Length)
+            {
+                // подстраховка на случай «битых» чисел в заголовке
+                compressedSize = fileContent.Length - start;
+            }
+
+            byte[] compData = new byte[compressedSize];
+            Buffer.BlockCopy(fileContent, start, compData, 0, compressedSize);
+
+            // 4) LZMA → заголовок содержимого
             byte[] decomData = LzmaHelper.DecompressData(compData);
 
+            // 5) Парсим индекс и пишем файлы (UTF-8 имена!)
             int numFiles = EndianConverter.FromBigEndian(decomData, 0);
             int pos = 4;
             for (int i = 0; i < numFiles; i++)
             {
                 int nameStart = pos;
-                while (pos < decomData.Length && decomData[pos] != 0)
-                {
-                    pos++;
-                }
-                string filename = Encoding.ASCII.GetString(decomData, nameStart, pos - nameStart);
-                pos++;
-                int offset = EndianConverter.FromBigEndian(decomData, pos);
-                pos += 4;
-                int size = EndianConverter.FromBigEndian(decomData, pos);
-                pos += 4;
+                while (pos < decomData.Length && decomData[pos] != 0) pos++;
+                if (pos >= decomData.Length) throw new InvalidDataException("Повреждён индекс имён.");
+                string filename = Encoding.UTF8.GetString(decomData, nameStart, pos - nameStart);
+                pos++; // нулевой терминатор
+
+                int offset = EndianConverter.FromBigEndian(decomData, pos); pos += 4;
+                int size = EndianConverter.FromBigEndian(decomData, pos); pos += 4;
+                if (offset < 0 || size < 0 || offset + size > decomData.Length)
+                    throw new InvalidDataException("Выход за пределы распакованных данных.");
 
                 byte[] fileData = new byte[size];
                 Buffer.BlockCopy(decomData, offset, fileData, 0, size);
+
                 string outPath = Path.Combine(outputDir, filename);
                 Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
                 await File.WriteAllBytesAsync(outPath, fileData);
             }
         }
 
+        private static ushort ReadBEUInt16(BinaryReader reader)
+        {
+            int b1 = reader.ReadByte();
+            int b2 = reader.ReadByte();
+            return (ushort)((b1 << 8) | b2);
+        }
+
+        private static int ReadBEInt32(BinaryReader reader)
+        {
+            int b1 = reader.ReadByte();
+            int b2 = reader.ReadByte();
+            int b3 = reader.ReadByte();
+            int b4 = reader.ReadByte();
+            return (b1 << 24) | (b2 << 16) | (b3 << 8) | b4;
+        }
     }
 }
