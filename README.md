@@ -7,7 +7,7 @@ All-in-one modding tool for FusionFall.
 - Packs `.unity3d` archives.
 
 ## Testing
-Packing and unpacking have been verified on FusionFall OG and FusionFall Retro builds, as well as on FusionFall Heroes. Future tests are planned for Project Exonaut and Battle Party. Repacking `sharedassets.assets` is currently planned.
+Packing and unpacking have been verified on FusionFall OG and FusionFall Retro builds, as well as on FusionFall Heroes. Future tests are planned for Project Exonaut and Battle Party.
 
 ## Roadmap
 - Test with Project Exonaut and Battle Party builds.
@@ -19,6 +19,3 @@ Requires the .NET Framework 4.7.2 developer pack. To verify the project builds, 
 ```
 dotnet build
 ```
-
-## Test data
-Sample `.unity3d` files for experimentation live in the `test` directory.
