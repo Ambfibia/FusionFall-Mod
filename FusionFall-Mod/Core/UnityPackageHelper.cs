@@ -56,37 +56,45 @@ namespace FusionFall_Mod.Core
         public static async Task<byte[]> BuildHeaderData(List<FileEntry> fileEntries)
         {
             long totalFileDataSize = fileEntries.Sum(entry => entry.Size);
-            int finalBytes = 2;
-            int headerDataSize = UnityHeader.DataStartOffset + (int)totalFileDataSize + finalBytes;
-            byte[] headerData = new byte[headerDataSize];
-
-            int numFiles = fileEntries.Count;
-            Buffer.BlockCopy(EndianConverter.ToBigEndian(numFiles), 0, headerData, 0, 4);
-
-            int metadataPos = 4;
-            int fileDataOffset = UnityHeader.DataStartOffset;
-
-            foreach (FileEntry fileEntry in fileEntries)
+            int indexLength = 4;
+            foreach (FileEntry entry in fileEntries)
             {
-                byte[] nameBytes = Encoding.ASCII.GetBytes(fileEntry.FileName);
-                Buffer.BlockCopy(nameBytes, 0, headerData, metadataPos, nameBytes.Length);
-                metadataPos += nameBytes.Length;
-                headerData[metadataPos++] = 0;
-
-                Buffer.BlockCopy(EndianConverter.ToBigEndian(fileDataOffset), 0, headerData, metadataPos, 4);
-                metadataPos += 4;
-                Buffer.BlockCopy(EndianConverter.ToBigEndian((int)fileEntry.Size), 0, headerData, metadataPos, 4);
-                metadataPos += 4;
-
-                fileDataOffset += (int)fileEntry.Size;
+                byte[] nameBytes = Encoding.UTF8.GetBytes(entry.FileName);
+                indexLength += nameBytes.Length + 1 + 4 + 4;
             }
 
-            int fileDataPos = UnityHeader.DataStartOffset;
-            foreach (var fileEntry in fileEntries)
+            int dataStart = Align(indexLength, UnityHeader.DataStartOffset);
+            int finalBytes = 2;
+            int headerDataSize = dataStart + (int)totalFileDataSize + finalBytes;
+            byte[] headerData = new byte[headerDataSize];
+
+            int fileCount = fileEntries.Count;
+            Buffer.BlockCopy(EndianConverter.ToBigEndian(fileCount), 0, headerData, 0, 4);
+
+            int metadataPosition = 4;
+            int fileDataOffset = dataStart;
+
+            foreach (FileEntry entry in fileEntries)
             {
-                byte[] fileBytes = await File.ReadAllBytesAsync(fileEntry.FullPath);
-                Buffer.BlockCopy(fileBytes, 0, headerData, fileDataPos, fileBytes.Length);
-                fileDataPos += fileBytes.Length;
+                byte[] nameBytes = Encoding.UTF8.GetBytes(entry.FileName);
+                Buffer.BlockCopy(nameBytes, 0, headerData, metadataPosition, nameBytes.Length);
+                metadataPosition += nameBytes.Length;
+                headerData[metadataPosition++] = 0;
+
+                Buffer.BlockCopy(EndianConverter.ToBigEndian(fileDataOffset), 0, headerData, metadataPosition, 4);
+                metadataPosition += 4;
+                Buffer.BlockCopy(EndianConverter.ToBigEndian((int)entry.Size), 0, headerData, metadataPosition, 4);
+                metadataPosition += 4;
+
+                fileDataOffset += (int)entry.Size;
+            }
+
+            int fileDataPosition = dataStart;
+            foreach (FileEntry entry in fileEntries)
+            {
+                byte[] fileBytes = await File.ReadAllBytesAsync(entry.FullPath);
+                Buffer.BlockCopy(fileBytes, 0, headerData, fileDataPosition, fileBytes.Length);
+                fileDataPosition += fileBytes.Length;
             }
 
             return headerData;
@@ -102,36 +110,101 @@ namespace FusionFall_Mod.Core
         }
 
         /// <summary>
-        /// Построение основного заголовка.
+        /// Формирование полного файла UnityWeb.
         /// </summary>
-        public static byte[] BuildMainHeader(UnityHeader header, int compressedDataLength)
+        private static byte[] BuildUnityWebFile(byte[] compressedData, int uncompressedSize, string versionInfo, string buildInfo, int offset)
         {
-            byte[] mainHeader = new byte[UnityHeader.MainHeaderSize];
+            using var outputStream = new MemoryStream(offset + compressedData.Length + 64);
+            using var binaryWriter = new BinaryWriter(outputStream, Encoding.ASCII, leaveOpen: true);
 
-            byte[] flagBytes = Encoding.ASCII.GetBytes(header.FlagFile);
-            Buffer.BlockCopy(flagBytes, 0, mainHeader, 0, Math.Min(flagBytes.Length, 8));
+            // запись сигнатуры
+            binaryWriter.Write(Encoding.ASCII.GetBytes("UnityWeb"));
 
-            mainHeader[12] = header.MajorVersion;
-            byte[] ver2Bytes = Encoding.ASCII.GetBytes(header.VersionInfo.PadRight(12, '\0'));
-            Buffer.BlockCopy(ver2Bytes, 0, mainHeader, 13, 12);
-            byte[] ver3Bytes = Encoding.ASCII.GetBytes(header.BuildInfo.PadRight(7, '\0'));
-            Buffer.BlockCopy(ver3Bytes, 0, mainHeader, 26, 7);
+            // u32 0
+            binaryWriter.Write(new byte[4]);
 
-            header.FileSize = UnityHeader.MainHeaderSize + compressedDataLength;
-            Buffer.BlockCopy(EndianConverter.ToBigEndian(header.FileSize), 0, mainHeader, 34, 4);
-            Buffer.BlockCopy(EndianConverter.ToBigEndian(header.FirstOffset), 0, mainHeader, 38, 4);
+            // версия
+            binaryWriter.Write((byte)2);
 
-            mainHeader[45] = 1;
-            mainHeader[49] = 1;
+            // строки версий
+            WriteCString(binaryWriter, versionInfo);
+            WriteCString(binaryWriter, buildInfo);
 
-            header.FileZipSize = compressedDataLength;
-            Buffer.BlockCopy(EndianConverter.ToBigEndian(header.FileZipSize), 0, mainHeader, 50, 4);
-            Buffer.BlockCopy(EndianConverter.ToBigEndian(header.FileUnzipSize), 0, mainHeader, 54, 4);
+            // размер распакованных данных
+            binaryWriter.Write(EndianConverter.ToBigEndian(uncompressedSize));
 
-            header.LastOffset = UnityHeader.MainHeaderSize + compressedDataLength;
-            Buffer.BlockCopy(EndianConverter.ToBigEndian(header.LastOffset), 0, mainHeader, 58, 4);
+            // u16 0
+            binaryWriter.Write(new byte[2]);
 
-            return mainHeader;
+            long offsetPosition = outputStream.Position;
+            // смещение до сжатых данных
+            WriteBEUInt16(binaryWriter, (ushort)offset);
+
+            // служебные поля
+            binaryWriter.Write(EndianConverter.ToBigEndian(1));
+            binaryWriter.Write(EndianConverter.ToBigEndian(1));
+            binaryWriter.Write(EndianConverter.ToBigEndian(compressedData.Length));
+            binaryWriter.Write(EndianConverter.ToBigEndian(uncompressedSize));
+            int lastOffset = offset + compressedData.Length;
+            binaryWriter.Write(EndianConverter.ToBigEndian(lastOffset));
+            binaryWriter.Write((byte)0);
+
+            if (outputStream.Position > offset)
+            {
+                offset = Align((int)outputStream.Position, 16);
+                long current = outputStream.Position;
+                outputStream.Position = offsetPosition;
+                WriteBEUInt16(binaryWriter, (ushort)offset);
+                outputStream.Position = current;
+
+                current = outputStream.Position;
+                outputStream.Position = offsetPosition + 2 + 4 + 4;
+                binaryWriter.Write(EndianConverter.ToBigEndian(compressedData.Length));
+                binaryWriter.Write(EndianConverter.ToBigEndian(uncompressedSize));
+                binaryWriter.Write(EndianConverter.ToBigEndian(offset + compressedData.Length));
+                binaryWriter.Write((byte)0);
+                outputStream.Position = current;
+            }
+
+            while (outputStream.Position < offset)
+            {
+                binaryWriter.Write((byte)0);
+            }
+
+            binaryWriter.Write(compressedData);
+            return outputStream.ToArray();
+        }
+
+        /// <summary>
+        /// Запись строки с завершающим нулём.
+        /// </summary>
+        private static void WriteCString(BinaryWriter writer, string value)
+        {
+            byte[] stringBytes = Encoding.UTF8.GetBytes(value);
+            writer.Write(stringBytes);
+            writer.Write((byte)0);
+        }
+
+        /// <summary>
+        /// Запись 16-битного числа в Big-Endian.
+        /// </summary>
+        private static void WriteBEUInt16(BinaryWriter writer, ushort value)
+        {
+            writer.Write((byte)(value >> 8));
+            writer.Write((byte)(value & 0xFF));
+        }
+
+        /// <summary>
+        /// Выравнивание значения до ближайшего кратного.
+        /// </summary>
+        private static int Align(int value, int alignment)
+        {
+            if (alignment <= 0)
+            {
+                return value;
+            }
+            int remainder = value % alignment;
+            return remainder == 0 ? value : value + (alignment - remainder);
         }
 
         /// <summary>
@@ -139,17 +212,10 @@ namespace FusionFall_Mod.Core
         /// </summary>
         public static async Task PackAsync(List<FileEntry> fileEntries, string outputFile, bool compress, string flag)
         {
-            UnityHeader header = new UnityHeader(flag);
             byte[] headerData = await BuildHeaderData(fileEntries);
-            header.FileUnzipSize = headerData.Length;
-            byte[] compData = compress ? LzmaHelper.CompressData(headerData) : headerData;
-            byte[] mainHeader = BuildMainHeader(header, compData.Length);
-
-            byte[] outputData = new byte[mainHeader.Length + compData.Length];
-            Buffer.BlockCopy(mainHeader, 0, outputData, 0, mainHeader.Length);
-            Buffer.BlockCopy(compData, 0, outputData, mainHeader.Length, compData.Length);
-
-            await File.WriteAllBytesAsync(outputFile, outputData);
+            byte[] compressedData = compress ? LzmaHelper.CompressData(headerData) : headerData;
+            byte[] finalFile = BuildUnityWebFile(compressedData, headerData.Length, "fusion-2.x.x", "2.5.4b5", UnityHeader.MainHeaderSize);
+            await File.WriteAllBytesAsync(outputFile, finalFile);
         }
 
         /// <summary>
