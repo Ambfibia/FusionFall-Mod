@@ -157,10 +157,6 @@ namespace FusionFall_Mod
         // Упаковка файла sharedassets
         private async Task PackAssets()
         {
-            string? original = await ShowAssetsFileDialog();
-            if (original == null)
-                return;
-
             IReadOnlyList<IStorageFolder> folders = await _window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions());
             if (folders.Count == 0)
                 return;
@@ -183,9 +179,9 @@ namespace FusionFall_Mod
 
             try
             {
-                Log("Начало упаковки assets.");
-                await Task.Run(() => RawAssetsHelper.Pack(original, folderPath, output));
-                Log("Упаковка завершена.");
+                Log("Начало сборки assets.");
+                await Task.Run(() => RawAssetsHelper.Pack(folderPath, output));
+                Log("Сборка завершена.");
                 await MessageBoxManager.GetMessageBoxStandard("Success", "Assets packed successfully.").ShowAsync();
             }
             catch (Exception ex)
