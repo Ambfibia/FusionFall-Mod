@@ -55,7 +55,6 @@ namespace FusionFall_Mod.Core
         /// </summary>
         public static async Task<byte[]> BuildHeaderData(List<FileEntry> fileEntries)
         {
-            long totalFileDataSize = fileEntries.Sum(entry => entry.Size);
             int indexLength = 4;
             foreach (FileEntry entry in fileEntries)
             {
@@ -64,8 +63,15 @@ namespace FusionFall_Mod.Core
             }
 
             int dataStart = Align(indexLength, UnityHeader.DataStartOffset);
-            int finalBytes = 2;
-            int headerDataSize = dataStart + (int)totalFileDataSize + finalBytes;
+
+            // расчёт полного размера блока с учётом выравнивания файлов
+            int headerDataSize = dataStart;
+            foreach (FileEntry entry in fileEntries)
+            {
+                headerDataSize += (int)entry.Size;
+                headerDataSize = Align(headerDataSize, 4);
+            }
+
             byte[] headerData = new byte[headerDataSize];
 
             int fileCount = fileEntries.Count;
@@ -86,7 +92,9 @@ namespace FusionFall_Mod.Core
                 Buffer.BlockCopy(EndianConverter.ToBigEndian((int)entry.Size), 0, headerData, metadataPosition, 4);
                 metadataPosition += 4;
 
+                // смещение следующего файла с учётом выравнивания по 4 байта
                 fileDataOffset += (int)entry.Size;
+                fileDataOffset = Align(fileDataOffset, 4);
             }
 
             int fileDataPosition = dataStart;
@@ -95,6 +103,14 @@ namespace FusionFall_Mod.Core
                 byte[] fileBytes = await File.ReadAllBytesAsync(entry.FullPath);
                 Buffer.BlockCopy(fileBytes, 0, headerData, fileDataPosition, fileBytes.Length);
                 fileDataPosition += fileBytes.Length;
+
+                // добавление паддинга между файлами
+                int padding = Align(fileDataPosition, 4) - fileDataPosition;
+                if (padding > 0)
+                {
+                    headerData[fileDataPosition] = 0x01;
+                    fileDataPosition += padding;
+                }
             }
 
             return headerData;
