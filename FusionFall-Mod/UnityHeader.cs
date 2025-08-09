@@ -19,19 +19,14 @@ namespace FusionFall_Mod.Models
         public string FlagFile { get; }
 
         /// <summary>
-        /// Основная (мажорная) версия.
+        /// Информация о заголовке файла.
         /// </summary>
-        public byte MajorVersion { get; set; } = 2;
-
-        /// <summary>
-        /// Дополнительная информация о версии.
-        /// </summary>
-        public string VersionInfo { get; set; } = "fusion-2.x.x";
-
-        /// <summary>
-        /// Инфо о сборке.
-        /// </summary>
-        public string BuildInfo { get; set; } = "2.5.4b5";
+        public HeaderInfo Info { get; } = new HeaderInfo
+        {
+            MajorVersion = 2,
+            VersionInfo = "fusion-2.x.x",
+            BuildInfo = "2.5.4b5"
+        };
 
         /// <summary>
         /// Полный размер файла.
