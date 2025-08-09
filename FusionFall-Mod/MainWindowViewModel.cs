@@ -22,12 +22,16 @@ namespace FusionFall_Mod
             _window = window;
             PackCommand = new AsyncCommand(PackUnity3D);
             ExtractCommand = new AsyncCommand(ExtractFiles);
+            PackAssetsCommand = new AsyncCommand(PackAssets);
+            UnpackAssetsCommand = new AsyncCommand(UnpackAssets);
         }
 
         public string ConsoleText => _console.ToString();
 
         public ICommand PackCommand { get; }
         public ICommand ExtractCommand { get; }
+        public ICommand PackAssetsCommand { get; }
+        public ICommand UnpackAssetsCommand { get; }
 
         // Добавление сообщения в консоль
         private void Log(string message)
@@ -129,6 +133,90 @@ namespace FusionFall_Mod
             {
                 Log($"Ошибка распаковки: {ex.Message}");
                 await MessageBoxManager.GetMessageBoxStandard("Error", $"Extraction failed:\n{ex.Message}").ShowAsync();
+            }
+        }
+
+        // Показ диалога выбора файла .assets
+        private async Task<string?> ShowAssetsFileDialog()
+        {
+            FilePickerOpenOptions fpo = new FilePickerOpenOptions
+            {
+                AllowMultiple = false,
+                FileTypeFilter = new List<FilePickerFileType>
+                {
+                    new FilePickerFileType("Unity assets") { Patterns = new[] { "*.assets" } },
+                    new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
+                }
+            };
+            IReadOnlyList<IStorageFile> files = await _window.StorageProvider.OpenFilePickerAsync(fpo);
+            if (files == null || files.Count == 0)
+                return null;
+            return files[0].TryGetLocalPath();
+        }
+
+        // Упаковка файла sharedassets
+        private async Task PackAssets()
+        {
+            string? original = await ShowAssetsFileDialog();
+            if (original == null)
+                return;
+
+            IReadOnlyList<IStorageFolder> folders = await _window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions());
+            if (folders.Count == 0)
+                return;
+            string? folderPath = folders[0].TryGetLocalPath();
+            if (string.IsNullOrWhiteSpace(folderPath))
+                return;
+
+            FilePickerSaveOptions sfo = new FilePickerSaveOptions
+            {
+                FileTypeChoices = new List<FilePickerFileType>
+                {
+                    new FilePickerFileType("Unity assets") { Patterns = new[] { "*.assets" } },
+                    new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
+                }
+            };
+            IStorageFile? saveFile = await _window.StorageProvider.SaveFilePickerAsync(sfo);
+            string? output = saveFile?.TryGetLocalPath();
+            if (string.IsNullOrWhiteSpace(output))
+                return;
+
+            try
+            {
+                Log("Начало упаковки assets.");
+                await Task.Run(() => RawAssetsHelper.Pack(original, folderPath, output));
+                Log("Упаковка завершена.");
+                await MessageBoxManager.GetMessageBoxStandard("Success", "Assets packed successfully.").ShowAsync();
+            }
+            catch (Exception ex)
+            {
+                Log($"Ошибка упаковки: {ex.Message}");
+                await MessageBoxManager.GetMessageBoxStandard("Error", $"Packing failed:\n{ex.Message}").ShowAsync();
+            }
+        }
+
+        // Распаковка файла sharedassets
+        private async Task UnpackAssets()
+        {
+            string? inputFilename = await ShowAssetsFileDialog();
+            if (inputFilename == null)
+                return;
+            string? inputDir = Path.GetDirectoryName(inputFilename);
+            string fileBase = Path.GetFileNameWithoutExtension(inputFilename);
+            string outputDir = Path.Combine(inputDir!, $"{fileBase}_unpacked");
+            Directory.CreateDirectory(outputDir);
+
+            try
+            {
+                Log("Начало распаковки assets.");
+                await Task.Run(() => RawAssetsHelper.Unpack(inputFilename, outputDir));
+                Log("Распаковка завершена.");
+                await MessageBoxManager.GetMessageBoxStandard("Success", "Assets unpacked successfully.").ShowAsync();
+            }
+            catch (Exception ex)
+            {
+                Log($"Ошибка распаковки: {ex.Message}");
+                await MessageBoxManager.GetMessageBoxStandard("Error", $"Unpacking failed:\n{ex.Message}").ShowAsync();
             }
         }
 
