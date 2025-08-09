@@ -95,7 +95,7 @@ namespace FusionFall_Mod
 
             try
             {
-                await UnityPackageHelper.PackAsync(fileEntries, outputFilename, SelectedFlag);
+                await UnityPackageHelper.PackAsync(folderPath, outputFilename, SelectedFlag);
                 await MessageBoxManager.GetMessageBoxStandard("Success", "Packing completed successfully.").ShowAsync();
             }
             catch (Exception ex)
