@@ -129,7 +129,9 @@ namespace FusionFall_Mod
             if (inputFilename == null)
                 return;
             string? inputDir = Path.GetDirectoryName(inputFilename);
-            string outputDir = Path.Combine(inputDir!, "uncompressfiles");
+            string fileBase = Path.GetFileNameWithoutExtension(inputFilename);
+            string outputDir = Path.Combine(inputDir!, $"{fileBase}_unpacked");
+            // Формирование пути распакованной папки
             Directory.CreateDirectory(outputDir);
 
             try
