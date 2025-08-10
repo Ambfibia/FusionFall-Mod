@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using FusionFall_Mod.Core;
+using FusionFall_Mod.Infrastructure;
 using FusionFall_Mod.Models;
 using MsBox.Avalonia;
 using System.Collections.Generic;
@@ -8,7 +9,7 @@ using System.ComponentModel;
 using System.Text;
 using System.Windows.Input;
 
-namespace FusionFall_Mod
+namespace FusionFall_Mod.ViewModels
 {
     public class MainWindowViewModel : INotifyPropertyChanged
     {

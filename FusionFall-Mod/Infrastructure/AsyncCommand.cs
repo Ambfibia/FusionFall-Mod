@@ -1,6 +1,6 @@
 using System.Windows.Input;
 
-namespace FusionFall_Mod
+namespace FusionFall_Mod.Infrastructure
 {
     /// <summary>
     /// Команда для асинхронного выполнения методов.

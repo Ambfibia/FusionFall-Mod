@@ -1,3 +1,4 @@
+using FusionFall_Mod.Core.Compression;
 using FusionFall_Mod.Models;
 using System.Text;
 using System.Text.Json;
