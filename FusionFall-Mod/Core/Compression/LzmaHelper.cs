@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace FusionFall_Mod.Core
+namespace FusionFall_Mod.Core.Compression
 {
     /// <summary>
     /// Методы для LZMA-упаковки и распаковки данных.
