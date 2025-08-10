@@ -16,46 +16,46 @@ namespace FusionFall_Mod.Core
 
         public static void UnpackAssetsV6(string assetsPath, string outDir)
         {
-            using var fs = File.OpenRead(assetsPath);
-            using var br = new BinaryReader(fs);
+            using FileStream fs = File.OpenRead(assetsPath);
+            using BinaryReader br = new BinaryReader(fs);
 
-            var hdr = ReadHeaderV6(br);
+            HeaderV6 hdr = ReadHeaderV6(br);
             if (hdr.Version != 6)
                 throw new NotSupportedException($"SerializedFile version {hdr.Version} != 6");
 
-            var dataBase = hdr.DataOffset != 0 ? hdr.DataOffset : hdr.MetaSize;
+            uint dataBase = hdr.DataOffset != 0 ? hdr.DataOffset : hdr.MetaSize;
             if (dataBase <= 0 || dataBase > fs.Length)
                 throw new InvalidDataException("Bad dataBase");
 
             fs.Position = 0;
-            var metadata = br.ReadBytes((int)dataBase);
+            byte[] metadata = br.ReadBytes((int)dataBase);
 
-            var table = FindObjectTable(metadata, (long)fs.Length, (int)dataBase)
+            ObjectTable table = FindObjectTable(metadata, (long)fs.Length, (int)dataBase)
                        ?? throw new InvalidDataException("Object table not found.");
 
             Directory.CreateDirectory(outDir);
-            var metaPath = Path.Combine(outDir, "metadata.bin");
-            var objDir = Path.Combine(outDir, "objects");
+            string metaPath = Path.Combine(outDir, "metadata.bin");
+            string objDir = Path.Combine(outDir, "objects");
             Directory.CreateDirectory(objDir);
             File.WriteAllBytes(metaPath, metadata);
 
-            var entries = new List<ObjectEntry>();
+            List<ObjectEntry> entries = new List<ObjectEntry>();
             for (int i = 0; i < table.Count; i++)
             {
-                var e = table[i];
-                var abs = dataBase + (long)e.OffsetRel;
+                ObjectEntry e = table[i];
+                long abs = dataBase + (long)e.OffsetRel;
                 if (abs < 0 || abs + e.Size > fs.Length)
                     throw new InvalidDataException($"Entry {i}: bad data range");
 
                 fs.Position = abs;
-                var data = br.ReadBytes((int)e.Size);
-                var objName = $"{i:D5}__pid-{e.PathId}__typ-{e.TypeIndex}.bin";
+                byte[] data = br.ReadBytes((int)e.Size);
+                string objName = $"{i:D5}__pid-{e.PathId}__typ-{e.TypeIndex}.bin";
                 File.WriteAllBytes(Path.Combine(objDir, objName), data);
 
                 entries.Add(e);
             }
 
-            var manifest = new Manifest
+            Manifest manifest = new Manifest
             {
                 Version = (int)hdr.Version,
                 MetaSize = (int)hdr.MetaSize,
@@ -82,11 +82,11 @@ namespace FusionFall_Mod.Core
         private static HeaderV6 ReadHeaderV6(BinaryReader br)
         {
             br.BaseStream.Position = 0;
-            var metaSize = ReadBE32(br);
-            var fileSize = ReadBE32(br);
-            var version = ReadBE32(br);
-            var dataOff = ReadBE32(br);
-            var endianTag = ReadBE32(br);
+            uint metaSize = ReadBE32(br);
+            uint fileSize = ReadBE32(br);
+            uint version = ReadBE32(br);
+            uint dataOff = ReadBE32(br);
+            uint endianTag = ReadBE32(br);
             return new HeaderV6
             {
                 MetaSize = metaSize,
@@ -116,7 +116,7 @@ namespace FusionFall_Mod.Core
                 int count = BitConverter.ToInt32(metadata, pos);
                 if (count <= 0 || count > 200000) continue;
 
-                foreach (var scheme in new[] { ("le64", 20), ("le32", 16) })
+                foreach ((string, int) scheme in new[] { ("le64", 20), ("le32", 16) })
                 {
                     bool ok = true;
                     int recSize = scheme.Item2;
@@ -152,7 +152,7 @@ namespace FusionFall_Mod.Core
 
                     if (ok && count > bestCount)
                     {
-                        var list = new List<ObjectEntry>(count);
+                        List<ObjectEntry> list = new List<ObjectEntry>(count);
                         long basePos = pos + 4;
                         for (int i = 0; i < count; i++)
                         {
@@ -241,41 +241,41 @@ namespace FusionFall_Mod.Core
         // --- Публичный API для сборки ---
         public static void BuildAssetsV6(string inDir, string outAssetsPath)
         {
-            var manifestPath = Path.Combine(inDir, "manifest.json");
-            var metaPath = Path.Combine(inDir, "metadata.bin");
-            var objDir = Path.Combine(inDir, "objects");
+            string manifestPath = Path.Combine(inDir, "manifest.json");
+            string metaPath = Path.Combine(inDir, "metadata.bin");
+            string objDir = Path.Combine(inDir, "objects");
 
-            var manifest = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(manifestPath))
+            Manifest manifest = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(manifestPath))
                            ?? throw new InvalidDataException("manifest.json invalid");
 
-            var metaBytesFull = File.ReadAllBytes(metaPath);
+            byte[] metaBytesFull = File.ReadAllBytes(metaPath);
             byte[] metaCore;
             if (metaBytesFull.Length == manifest.MetaSize) metaCore = metaBytesFull;
             else if (metaBytesFull.Length == manifest.MetaSize + 20) metaCore = metaBytesFull.AsSpan(20, manifest.MetaSize).ToArray();
             else if (metaBytesFull.Length > manifest.MetaSize) metaCore = metaBytesFull.AsSpan(metaBytesFull.Length - manifest.MetaSize, manifest.MetaSize).ToArray();
             else throw new InvalidDataException($"metadata.bin size {metaBytesFull.Length} != MetaSize {manifest.MetaSize}");
 
-            var tbl = FindObjectTableInMeta(metaCore, manifest.Count)
+            ObjectTable tbl = FindObjectTableInMeta(metaCore, manifest.Count)
                       ?? throw new InvalidDataException("Object table not found in metadata.bin");
 
-            var files = Directory.GetFiles(objDir, "*.bin").OrderBy(p => p).ToArray();
+            string[] files = Directory.GetFiles(objDir, "*.bin").OrderBy(p => p).ToArray();
             if (files.Length != manifest.Count)
                 throw new InvalidDataException($"objects count mismatch: {files.Length} vs {manifest.Count}");
 
-            using var fs = File.Create(outAssetsPath);
-            using var bw = new BinaryWriter(fs);
+            using FileStream fs = File.Create(outAssetsPath);
+            using BinaryWriter bw = new BinaryWriter(fs);
 
             bw.Write(new byte[20]);
             bw.Write(metaCore);
             long dataBase = 20 + metaCore.Length;
 
-            var newOffsets = new (long PathId, uint OffRel, uint Size)[manifest.Count];
+            (long PathId, uint OffRel, uint Size)[] newOffsets = new (long PathId, uint OffRel, uint Size)[manifest.Count];
             for (int i = 0; i < manifest.Count; i++)
             {
                 Align4(bw);
                 uint rel = (uint)(fs.Position - dataBase);
 
-                var bytes = File.ReadAllBytes(files[i]);
+                byte[] bytes = File.ReadAllBytes(files[i]);
                 bw.Write(bytes);
 
                 newOffsets[i] = (manifest.Entries[i].PathId, rel, (uint)bytes.Length);
@@ -290,8 +290,8 @@ namespace FusionFall_Mod.Core
 
             for (int i = 0; i < manifest.Count; i++)
             {
-                var m = manifest.Entries[i];
-                var p = newOffsets[i];
+                ObjectEntry m = manifest.Entries[i];
+                (long PathId, uint OffRel, uint Size) p = newOffsets[i];
 
                 if (tbl.PathIdIs64)
                 {
@@ -332,7 +332,7 @@ namespace FusionFall_Mod.Core
                 if (count <= 0 || count > 200000) continue;
                 if (expectedCount > 0 && count != expectedCount) continue;
 
-                foreach (var scheme in new[] { ("le64", 20), ("le32", 16) })
+                foreach ((string, int) scheme in new[] { ("le64", 20), ("le32", 16) })
                 {
                     bool ok = true;
                     int recSize = scheme.Item2;
