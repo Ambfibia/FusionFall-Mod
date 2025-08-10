@@ -15,11 +15,11 @@ namespace FusionFall_Mod.Core.Compression
         /// </summary>
         public static byte[] CompressData(byte[] data)
         {
-            using var inputStream = new MemoryStream(data, writable: false);
-            using var outputStream = new MemoryStream();
+            using MemoryStream inputStream = new MemoryStream(data, writable: false);
+            using MemoryStream outputStream = new MemoryStream();
 
-            var encoder = new SevenZip.Compression.LZMA.Encoder();
-            var properties = new Dictionary<SevenZip.CoderPropID, object>
+            SevenZip.Compression.LZMA.Encoder encoder = new SevenZip.Compression.LZMA.Encoder();
+            Dictionary<SevenZip.CoderPropID, object> properties = new Dictionary<SevenZip.CoderPropID, object>
             {
                 { SevenZip.CoderPropID.DictionarySize, 1 << 23 },
                 { SevenZip.CoderPropID.LitContextBits, 3 },
@@ -48,24 +48,24 @@ namespace FusionFall_Mod.Core.Compression
         /// </summary>
         public static byte[] DecompressData(byte[] data)
         {
-            using var inputStream = new MemoryStream(data, writable: false);
-            var decoder = new SevenZip.Compression.LZMA.Decoder();
+            using MemoryStream inputStream = new MemoryStream(data, writable: false);
+            SevenZip.Compression.LZMA.Decoder decoder = new SevenZip.Compression.LZMA.Decoder();
 
-            var properties = new byte[5];
+            byte[] properties = new byte[5];
             if (inputStream.Read(properties, 0, 5) != 5)
             {
                 throw new Exception("Слишком короткий поток .lzma");
             }
             decoder.SetDecoderProperties(properties);
 
-            var sizeBytes = new byte[8];
+            byte[] sizeBytes = new byte[8];
             if (inputStream.Read(sizeBytes, 0, 8) != 8)
             {
                 throw new Exception("Слишком короткий поток .lzma");
             }
             long uncompressedSize = BitConverter.ToInt64(sizeBytes, 0);
 
-            using var outputStream = new MemoryStream();
+            using MemoryStream outputStream = new MemoryStream();
             decoder.Code(inputStream, outputStream, inputStream.Length - inputStream.Position, uncompressedSize, null);
             return outputStream.ToArray();
         }

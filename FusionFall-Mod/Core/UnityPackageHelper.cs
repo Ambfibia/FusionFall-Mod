@@ -16,7 +16,7 @@ namespace FusionFall_Mod.Core
         public static List<FileEntry> CollectFileEntries(string folderPath)
         {
             // Собираем имена файлов (только в корне папки) и исключаем служебный header.json
-            var files = Directory.EnumerateFiles(folderPath)
+            List<string> files = Directory.EnumerateFiles(folderPath)
                 .Select(Path.GetFileName)
                 .Where(n => n != null && !string.Equals(n, "header.json", StringComparison.OrdinalIgnoreCase))
                 .Cast<string>()
@@ -49,9 +49,9 @@ namespace FusionFall_Mod.Core
             }
 
             // Натуральный компаратор: игнор регистра + числа как числа
-            var natural = NaturalComparer.Instance;
+            NaturalComparer natural = NaturalComparer.Instance;
 
-            var ordered = files
+            List<string> ordered = files
                 .OrderBy(Category)               // сначала по категории
                 .ThenBy(f => f, natural)         // внутри категории — натуральная сортировка
                 .ToList();
@@ -189,8 +189,8 @@ namespace FusionFall_Mod.Core
         /// </summary>
         private static byte[] BuildUnityWebFile(byte[] compressedData, int uncompressedSize, UnityHeader header)
         {
-            using var outputStream = new MemoryStream(1024 + compressedData.Length);
-            using var writer = new BinaryWriter(outputStream, Encoding.ASCII, leaveOpen: true);
+            using MemoryStream outputStream = new MemoryStream(1024 + compressedData.Length);
+            using BinaryWriter writer = new BinaryWriter(outputStream, Encoding.ASCII, leaveOpen: true);
 
             // сигнатура
             writer.Write(Encoding.ASCII.GetBytes(header.FlagFile)); // 8 байт
@@ -356,8 +356,8 @@ namespace FusionFall_Mod.Core
         public static async Task ExtractAsync(string inputFile, string outputDir)
         {
             byte[] fileContent = await File.ReadAllBytesAsync(inputFile);
-            using var stream = new MemoryStream(fileContent);
-            using var reader = new BinaryReader(stream, Encoding.ASCII, leaveOpen: true);
+            using MemoryStream stream = new MemoryStream(fileContent);
+            using BinaryReader reader = new BinaryReader(stream, Encoding.ASCII, leaveOpen: true);
 
             // 1) Заголовок
             string flag = Encoding.ASCII.GetString(reader.ReadBytes(8)); // "UnityWeb" или "streamed"
