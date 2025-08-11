@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 
 namespace FusionFall_Mod.Core
@@ -16,51 +17,81 @@ namespace FusionFall_Mod.Core
 
         public static void UnpackAssetsV6(string assetsPath, string outDir)
         {
-            using FileStream fs = File.OpenRead(assetsPath);
-            using BinaryReader br = new BinaryReader(fs);
+            byte[] fileBytes = File.ReadAllBytes(assetsPath);
+            if (fileBytes.Length < 20)
+            {
+                throw new InvalidDataException("Файл слишком мал.");
+            }
 
-            HeaderV6 hdr = ReadHeaderV6(br);
-            if (hdr.Version != 6)
-                throw new NotSupportedException($"SerializedFile version {hdr.Version} != 6");
+            uint metaSize = BinaryPrimitives.ReadUInt32BigEndian(fileBytes.AsSpan(0, 4));
+            uint fileSize = BinaryPrimitives.ReadUInt32BigEndian(fileBytes.AsSpan(4, 4));
+            uint version = BinaryPrimitives.ReadUInt32BigEndian(fileBytes.AsSpan(8, 4));
+            if (version != 6)
+            {
+                throw new NotSupportedException($"SerializedFile version {version} != 6");
+            }
 
-            uint dataBase = hdr.DataOffset != 0 ? hdr.DataOffset : hdr.MetaSize;
-            if (dataBase <= 0 || dataBase > fs.Length)
-                throw new InvalidDataException("Bad dataBase");
+            long metaStart = (long)fileSize - metaSize;
+            if (metaStart < 0 || metaStart > fileBytes.LongLength)
+            {
+                throw new InvalidDataException("Неверное положение метаданных.");
+            }
 
-            fs.Position = 0;
-            byte[] metadata = br.ReadBytes((int)dataBase);
+            byte[] meta = new byte[metaSize];
+            Array.Copy(fileBytes, (int)metaStart, meta, 0, (int)metaSize);
+            bool littleEndian = meta[0] == 0;
+            int pos = 1;
 
-            ObjectTable table = FindObjectTable(metadata, (long)fs.Length, (int)dataBase)
-                       ?? throw new InvalidDataException("Object table not found.");
+            Dictionary<int, string> typeNames = ParseTypesV6(meta, ref pos, littleEndian);
+
+            int objectCount = ReadInt32(meta, ref pos, littleEndian);
+            (List<ObjectEntry> Objects, int RecLen)? parsed =
+                TryParseObjects(meta, pos, objectCount, littleEndian, (int)metaStart);
+            if (parsed == null)
+            {
+                throw new InvalidDataException("Не удалось разобрать таблицу объектов.");
+            }
+
+            List<ObjectEntry> objects = parsed.Value.Objects;
+            int recLen = parsed.Value.RecLen;
+
+            ObjectTable table = new ObjectTable
+            {
+                TableOffset = pos - 4,
+                PathIdIs64 = false,
+                EntrySize = recLen,
+                Count = objectCount,
+                Entries = objects
+            };
 
             Directory.CreateDirectory(outDir);
             string metaPath = Path.Combine(outDir, "metadata.bin");
             string objDir = Path.Combine(outDir, "objects");
             Directory.CreateDirectory(objDir);
-            File.WriteAllBytes(metaPath, metadata);
+            File.WriteAllBytes(metaPath, meta);
 
             List<ObjectEntry> entries = new List<ObjectEntry>();
             for (int i = 0; i < table.Count; i++)
             {
                 ObjectEntry e = table[i];
-                long abs = dataBase + (long)e.OffsetRel;
-                if (abs < 0 || abs + e.Size > fs.Length)
-                    throw new InvalidDataException($"Entry {i}: bad data range");
+                long abs = e.OffsetRel;
+                if (abs < 0 || abs + e.Size > metaStart)
+                {
+                    throw new InvalidDataException($"Запись {i}: неверный диапазон данных");
+                }
 
-                fs.Position = abs;
-                byte[] data = br.ReadBytes((int)e.Size);
-                string objName = $"{i:D5}__pid-{e.PathId}__typ-{e.TypeIndex}.bin";
+                byte[] data = fileBytes.AsSpan((int)abs, (int)e.Size).ToArray();
+                string objName = $"{i:D4}_pid{e.PathId}_t{e.TypeIndex}.bin";
                 File.WriteAllBytes(Path.Combine(objDir, objName), data);
-
                 entries.Add(e);
             }
 
             Manifest manifest = new Manifest
             {
-                Version = (int)hdr.Version,
-                MetaSize = (int)hdr.MetaSize,
-                FileSize = (long)hdr.FileSize,
-                DataBase = (int)dataBase,
+                Version = (int)version,
+                MetaSize = (int)metaSize,
+                FileSize = fileSize,
+                DataBase = (int)metaStart,
                 TableOffset = table.TableOffset,
                 EntrySize = table.EntrySize,
                 PathIdIs64 = table.PathIdIs64,
@@ -104,97 +135,221 @@ namespace FusionFall_Mod.Core
             return BinaryPrimitives.ReadUInt32BigEndian(b);
         }
 
-        private static ObjectTable? FindObjectTable(byte[] metadata, long fileSize, int dataBase)
+        private static int ReadInt32(byte[] data, ref int pos, bool littleEndian)
         {
-            int start = 20;
-            int limit = Math.Min(metadata.Length, dataBase);
-            int bestCount = 0;
-            ObjectTable? best = null;
+            int value = littleEndian
+                ? BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(pos, 4))
+                : BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(pos, 4));
+            pos += 4;
+            return value;
+        }
 
-            for (int pos = start; pos + 4 < limit; pos++)
+        private static uint ReadUInt32(byte[] data, ref int pos, bool littleEndian)
+        {
+            uint value = littleEndian
+                ? BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(pos, 4))
+                : BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos, 4));
+            pos += 4;
+            return value;
+        }
+
+        private static string ReadCString(byte[] data, ref int pos)
+        {
+            int end = pos;
+            while (end < data.Length && data[end] != 0)
             {
-                int count = BitConverter.ToInt32(metadata, pos);
-                if (count <= 0 || count > 200000) continue;
+                end++;
+            }
+            if (end >= data.Length)
+            {
+                throw new InvalidDataException($"Не найден конец строки по адресу {pos}");
+            }
+            string s = Encoding.ASCII.GetString(data.AsSpan(pos, end - pos));
+            pos = end + 1;
+            return s;
+        }
 
-                foreach ((string, int) scheme in new[] { ("le64", 20), ("le32", 16) })
+        private static bool LooksLikeAscii(byte[] data, int pos, int minLen = 3)
+        {
+            int end = pos;
+            int limit = Math.Min(data.Length, pos + 128);
+            while (end < limit && data[end] != 0)
+            {
+                byte c = data[end];
+                if (c < 32 || c >= 127)
                 {
-                    bool ok = true;
-                    int recSize = scheme.Item2;
-                    long cursor = pos + 4;
+                    return false;
+                }
+                end++;
+            }
+            if (end == pos || end - pos < minLen || end >= data.Length)
+            {
+                return false;
+            }
+            return true;
+        }
 
-                    for (int i = 0; i < count; i++)
+        private class Node
+        {
+            public string Type = string.Empty;
+            public string Name = string.Empty;
+            public int Size;
+            public int Index;
+            public int IsArray;
+            public int Version;
+            public int Flags;
+            public List<Node> Children = new List<Node>();
+        }
+
+        private static Node ReadNodeV1(byte[] meta, ref int pos, bool littleEndian)
+        {
+            string type = ReadCString(meta, ref pos);
+            string name = ReadCString(meta, ref pos);
+            int size = ReadInt32(meta, ref pos, littleEndian);
+            int index = ReadInt32(meta, ref pos, littleEndian);
+            int isArray = ReadInt32(meta, ref pos, littleEndian);
+            int version = ReadInt32(meta, ref pos, littleEndian);
+            int flags = ReadInt32(meta, ref pos, littleEndian);
+            int childCount = ReadInt32(meta, ref pos, littleEndian);
+            List<Node> children = new List<Node>();
+            for (int i = 0; i < childCount; i++)
+            {
+                Node ch = ReadNodeV1(meta, ref pos, littleEndian);
+                children.Add(ch);
+            }
+            return new Node
+            {
+                Type = type,
+                Name = name,
+                Size = size,
+                Index = index,
+                IsArray = isArray,
+                Version = version,
+                Flags = flags,
+                Children = children
+            };
+        }
+
+        private static Dictionary<int, string> ParseTypesV6(byte[] meta, ref int pos, bool littleEndian)
+        {
+            Dictionary<int, string> classToName = new Dictionary<int, string>();
+            uint typeCount = ReadUInt32(meta, ref pos, littleEndian);
+            for (int i = 0; i < typeCount; i++)
+            {
+                int classId = ReadInt32(meta, ref pos, littleEndian);
+                if (classId < 0)
+                {
+                    if (!LooksLikeAscii(meta, pos))
                     {
-                        long basePos = cursor + i * recSize;
-                        if (basePos + recSize > limit) { ok = false; break; }
-
-                        long pathId;
-                        int offRel, size, typeIndex;
-                        if (scheme.Item1 == "le64")
-                        {
-                            pathId = BitConverter.ToInt64(metadata, (int)basePos + 0);
-                            offRel = BitConverter.ToInt32(metadata, (int)basePos + 8);
-                            size = BitConverter.ToInt32(metadata, (int)basePos + 12);
-                            typeIndex = BitConverter.ToInt32(metadata, (int)basePos + 16);
-                        }
-                        else
-                        {
-                            pathId = BitConverter.ToInt32(metadata, (int)basePos + 0);
-                            offRel = BitConverter.ToInt32(metadata, (int)basePos + 4);
-                            size = BitConverter.ToInt32(metadata, (int)basePos + 8);
-                            typeIndex = BitConverter.ToInt32(metadata, (int)basePos + 12);
-                        }
-
-                        if (size <= 0) { ok = false; break; }
-                        long abs = dataBase + (uint)offRel;
-                        if (abs <= 0 || abs + (uint)size > fileSize) { ok = false; break; }
-                        if (typeIndex < 0 || typeIndex > 4096) { ok = false; break; }
+                        pos += 16;
                     }
-
-                    if (ok && count > bestCount)
+                    if (!LooksLikeAscii(meta, pos))
                     {
-                        List<ObjectEntry> list = new List<ObjectEntry>(count);
-                        long basePos = pos + 4;
-                        for (int i = 0; i < count; i++)
-                        {
-                            long p = basePos + i * recSize;
-                            long pathId;
-                            int offRel, size, typeIndex;
-                            if (scheme.Item1 == "le64")
-                            {
-                                pathId = BitConverter.ToInt64(metadata, (int)p + 0);
-                                offRel = BitConverter.ToInt32(metadata, (int)p + 8);
-                                size = BitConverter.ToInt32(metadata, (int)p + 12);
-                                typeIndex = BitConverter.ToInt32(metadata, (int)p + 16);
-                            }
-                            else
-                            {
-                                pathId = BitConverter.ToInt32(metadata, (int)p + 0);
-                                offRel = BitConverter.ToInt32(metadata, (int)p + 4);
-                                size = BitConverter.ToInt32(metadata, (int)p + 8);
-                                typeIndex = BitConverter.ToInt32(metadata, (int)p + 12);
-                            }
-                            list.Add(new ObjectEntry
-                            {
-                                PathId = pathId,
-                                OffsetRel = (uint)offRel,
-                                Size = (uint)size,
-                                TypeIndex = typeIndex
-                            });
-                        }
-
-                        best = new ObjectTable
-                        {
-                            TableOffset = pos,
-                            PathIdIs64 = scheme.Item1 == "le64",
-                            EntrySize = recSize,
-                            Count = count,
-                            Entries = list
-                        };
-                        bestCount = count;
+                        pos += 16;
                     }
                 }
+                Node node = ReadNodeV1(meta, ref pos, littleEndian);
+                classToName[classId] = node.Type;
             }
-            return best;
+            return classToName;
+        }
+
+        private static (List<ObjectEntry> Objects, int RecLen)? TryParseObjects(byte[] meta, int pos, int count, bool littleEndian, int dataAreaLen)
+        {
+            (string Name, int RecLen, Func<int, (int Path, uint Off, uint Size, int Type)> Reader)[] layouts =
+                new (string Name, int RecLen, Func<int, (int Path, uint Off, uint Size, int Type)> Reader)[]
+            {
+                ("p-o-s-t-16", 16, p => (ReadInt32(meta, ref p, littleEndian), ReadUInt32(meta, ref p, littleEndian), ReadUInt32(meta, ref p, littleEndian), ReadInt32(meta, ref p, littleEndian))),
+                ("p-o-s-t-20", 20, p => { int path = ReadInt32(meta, ref p, littleEndian); uint off = ReadUInt32(meta, ref p, littleEndian); uint size = ReadUInt32(meta, ref p, littleEndian); int type = ReadInt32(meta, ref p, littleEndian); p += 4; return (path, off, size, type); }),
+                ("p-o-s-t-24", 24, p => { int path = ReadInt32(meta, ref p, littleEndian); uint off = ReadUInt32(meta, ref p, littleEndian); uint size = ReadUInt32(meta, ref p, littleEndian); int type = ReadInt32(meta, ref p, littleEndian); p += 8; return (path, off, size, type); }),
+                ("o-s-t-p-16", 16, p => { uint off = ReadUInt32(meta, ref p, littleEndian); uint size = ReadUInt32(meta, ref p, littleEndian); int type = ReadInt32(meta, ref p, littleEndian); int path = ReadInt32(meta, ref p, littleEndian); return (path, off, size, type); }),
+                ("p-t-o-s-16", 16, p => { int path = ReadInt32(meta, ref p, littleEndian); int type = ReadInt32(meta, ref p, littleEndian); uint off = ReadUInt32(meta, ref p, littleEndian); uint size = ReadUInt32(meta, ref p, littleEndian); return (path, off, size, type); })
+            };
+
+            double bestValid = 0.0;
+            double bestMono = 0.0;
+            List<ObjectEntry>? bestObjects = null;
+            int bestRec = 0;
+
+            foreach (var layout in layouts)
+            {
+                int end = pos + count * layout.RecLen;
+                if (end > meta.Length)
+                {
+                    continue;
+                }
+
+                int ok = 0;
+                int step = Math.Max(1, count / 128);
+                for (int i = 0; i < count; i += step)
+                {
+                    int p = pos + i * layout.RecLen;
+                    (int Path, uint Off, uint Size, int Type) r = layout.Reader(p);
+                    bool cond = r.Off < dataAreaLen && r.Size > 0 && r.Off + r.Size <= dataAreaLen && (r.Off % 4 == 0);
+                    if (cond)
+                    {
+                        ok++;
+                    }
+                }
+                if (ok < (count / step) * 9 / 10)
+                {
+                    continue;
+                }
+
+                int okFull = 0;
+                int mono = 0;
+                List<ObjectEntry> objs = new List<ObjectEntry>(count);
+                int lastOff = -1;
+                for (int i = 0; i < count; i++)
+                {
+                    int p = pos + i * layout.RecLen;
+                    (int Path, uint Off, uint Size, int Type) r = layout.Reader(p);
+                    bool cond = r.Off < dataAreaLen && r.Size > 0 && r.Off + r.Size <= dataAreaLen && (r.Off % 4 == 0);
+                    if (cond)
+                    {
+                        okFull++;
+                        if (r.Off >= (uint)lastOff)
+                        {
+                            mono++;
+                            lastOff = (int)r.Off;
+                        }
+                        objs.Add(new ObjectEntry
+                        {
+                            PathId = r.Path,
+                            OffsetRel = r.Off,
+                            Size = r.Size,
+                            TypeIndex = r.Type
+                        });
+                    }
+                    else
+                    {
+                        objs.Add(new ObjectEntry
+                        {
+                            PathId = r.Path,
+                            OffsetRel = r.Off,
+                            Size = r.Size,
+                            TypeIndex = r.Type
+                        });
+                    }
+                }
+
+                double validRatio = (double)okFull / count;
+                double monoRatio = okFull > 0 ? (double)mono / okFull : 0.0;
+                if (validRatio > bestValid || (Math.Abs(validRatio - bestValid) < 0.0001 && monoRatio > bestMono))
+                {
+                    bestValid = validRatio;
+                    bestMono = monoRatio;
+                    bestObjects = objs;
+                    bestRec = layout.RecLen;
+                }
+            }
+
+            if (bestObjects == null || bestValid < 0.95)
+            {
+                return null;
+            }
+
+            return (bestObjects, bestRec);
         }
 
         // --- Публичный API для сборки ---
