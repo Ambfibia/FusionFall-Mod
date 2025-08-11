@@ -42,7 +42,7 @@ namespace FusionFall_Mod.Core
             bool littleEndian = meta[0] == 0;
             int pos = 1;
 
-            Dictionary<int, string> typeNames = ParseTypesV6(meta, ref pos, littleEndian);
+            Dictionary<int, Node> typeTrees = ParseTypeTreesV6(meta, ref pos, littleEndian, out Dictionary<int, string> typeNames);
 
             int objectCount = ReadInt32(meta, ref pos, littleEndian);
             (List<ObjectEntry> Objects, int RecLen)? parsed =
@@ -73,17 +73,36 @@ namespace FusionFall_Mod.Core
             List<ObjectEntry> entries = new List<ObjectEntry>();
             for (int i = 0; i < table.Count; i++)
             {
-                ObjectEntry e = table[i];
-                long abs = e.OffsetRel;
-                if (abs < 0 || abs + e.Size > metaStart)
+                ObjectEntry entry = table[i];
+                long absolute = entry.OffsetRel;
+                if (absolute < 0 || absolute + entry.Size > metaStart)
                 {
-                    throw new InvalidDataException($"Запись {i}: неверный диапазон данных");
+                    throw new InvalidDataException("Запись " + i + ": неверный диапазон данных");
                 }
 
-                byte[] data = fileBytes.AsSpan((int)abs, (int)e.Size).ToArray();
-                string objName = $"{i:D4}_pid{e.PathId}_t{e.TypeIndex}.bin";
-                File.WriteAllBytes(Path.Combine(objDir, objName), data);
-                entries.Add(e);
+                byte[] data = fileBytes.AsSpan((int)absolute, (int)entry.Size).ToArray();
+
+                int key = entry.ClassId.HasValue ? entry.ClassId.Value : entry.TypeIndex;
+                string typeName;
+                if (!typeNames.TryGetValue(key, out typeName))
+                {
+                    typeName = key.ToString();
+                }
+
+                string objectNameSuffix = string.Empty;
+                Node tree;
+                if (typeTrees.TryGetValue(key, out tree))
+                {
+                    string extractedName;
+                    if (TryExtractMName(fileBytes, (int)absolute, (int)entry.Size, tree, littleEndian, out extractedName) && !string.IsNullOrWhiteSpace(extractedName))
+                    {
+                        objectNameSuffix = "_" + San(extractedName);
+                    }
+                }
+
+                string objectFileName = i.ToString("D4") + "_pid" + entry.PathId + "_" + San(typeName) + objectNameSuffix + ".bin";
+                File.WriteAllBytes(Path.Combine(objDir, objectFileName), data);
+                entries.Add(entry);
             }
 
             Manifest manifest = new Manifest
@@ -230,40 +249,181 @@ namespace FusionFall_Mod.Core
             };
         }
 
-        private static Dictionary<int, string> ParseTypesV6(byte[] meta, ref int pos, bool littleEndian)
+        private static Dictionary<int, Node> ParseTypeTreesV6(byte[] meta, ref int pos, bool littleEndian,
+                                                              out Dictionary<int, string> classToTypeName)
         {
-            Dictionary<int, string> classToName = new Dictionary<int, string>();
+            classToTypeName = new Dictionary<int, string>();
+            Dictionary<int, Node> trees = new Dictionary<int, Node>();
             uint typeCount = ReadUInt32(meta, ref pos, littleEndian);
             for (int i = 0; i < typeCount; i++)
             {
                 int classId = ReadInt32(meta, ref pos, littleEndian);
                 if (classId < 0)
                 {
-                    if (!LooksLikeAscii(meta, pos))
-                    {
-                        pos += 16;
-                    }
-                    if (!LooksLikeAscii(meta, pos))
-                    {
-                        pos += 16;
-                    }
+                    if (!LooksLikeAscii(meta, pos)) pos += 16;
+                    if (!LooksLikeAscii(meta, pos)) pos += 16;
                 }
-                Node node = ReadNodeV1(meta, ref pos, littleEndian);
-                classToName[classId] = node.Type;
+                Node root = ReadNodeV1(meta, ref pos, littleEndian);
+                trees[classId] = root;
+                classToTypeName[classId] = root.Type;
             }
-            return classToName;
+            return trees;
+        }
+
+        private const int KAlignFlag = 0x4000;
+
+        private static void Align4(ref int position)
+        {
+            position = (position + 3) & ~3;
+        }
+
+        private static int PrimitiveSize(string type)
+        {
+            return type switch
+            {
+                "SInt8" or "UInt8" or "char" or "bool" => 1,
+                "SInt16" or "UInt16" => 2,
+                "SInt32" or "UInt32" or "float" => 4,
+                "SInt64" or "UInt64" or "double" => 8,
+                _ => -1
+            };
+        }
+
+        private static string ReadAlignedString(byte[] buffer, int end, ref int position, bool littleEndian)
+        {
+            if (position + 4 > end)
+            {
+                return string.Empty;
+            }
+            int length = littleEndian ? BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(position, 4))
+                                      : BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(position, 4));
+            position += 4;
+            if (length < 0 || position + length > end)
+            {
+                length = Math.Max(0, Math.Min(length, end - position));
+            }
+            string result = Encoding.UTF8.GetString(buffer, position, Math.Max(0, length));
+            position += Math.Max(0, length);
+            Align4(ref position);
+            return result;
+        }
+
+        private static bool TryExtractMName(byte[] file, int start, int size, Node root, bool littleEndian, out string name)
+        {
+            name = string.Empty;
+            int position = start;
+            int end = start + size;
+            string foundName = string.Empty;
+
+            bool Consume(Node node, ref int readPosition)
+            {
+                if (node.Name == "m_Name" && node.Type == "string")
+                {
+                    foundName = ReadAlignedString(file, end, ref readPosition, littleEndian);
+                    return true;
+                }
+
+                if (node.Type == "string")
+                {
+                    _ = ReadAlignedString(file, end, ref readPosition, littleEndian);
+                    return false;
+                }
+
+                if (node.IsArray != 0)
+                {
+                    if (readPosition + 4 > end)
+                    {
+                        readPosition = end;
+                        return false;
+                    }
+                    int count = littleEndian ? BinaryPrimitives.ReadInt32LittleEndian(file.AsSpan(readPosition, 4))
+                                             : BinaryPrimitives.ReadInt32BigEndian(file.AsSpan(readPosition, 4));
+                    readPosition += 4;
+                    Node element = node.Children.Count > 0 ? node.Children[0] : null;
+                    if (element == null)
+                    {
+                        return false;
+                    }
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (Consume(element, ref readPosition)) return true;
+                    }
+                    if ((node.Flags & KAlignFlag) != 0) Align4(ref readPosition);
+                    return false;
+                }
+
+                Node arrayNode = node.Children.FirstOrDefault(c => c.Name == "Array");
+                if (arrayNode != null && arrayNode.Children.Count >= 2)
+                {
+                    if (readPosition + 4 > end)
+                    {
+                        readPosition = end;
+                        return false;
+                    }
+                    int count = littleEndian ? BinaryPrimitives.ReadInt32LittleEndian(file.AsSpan(readPosition, 4))
+                                             : BinaryPrimitives.ReadInt32BigEndian(file.AsSpan(readPosition, 4));
+                    readPosition += 4;
+                    Node dataNode = arrayNode.Children[1];
+                    Node element = dataNode.Children.Count > 0 ? dataNode.Children[0] : dataNode;
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (Consume(element, ref readPosition)) return true;
+                    }
+                    if ((node.Flags & KAlignFlag) != 0) Align4(ref readPosition);
+                    return false;
+                }
+
+                int primitiveSize = PrimitiveSize(node.Type);
+                if (primitiveSize > 0 && node.Children.Count == 0)
+                {
+                    readPosition = Math.Min(end, readPosition + primitiveSize);
+                    if ((node.Flags & KAlignFlag) != 0) Align4(ref readPosition);
+                    return false;
+                }
+
+                foreach (Node child in node.Children)
+                {
+                    if (Consume(child, ref readPosition)) return true;
+                }
+                if ((node.Flags & KAlignFlag) != 0) Align4(ref readPosition);
+                return false;
+            }
+
+            foreach (Node child in root.Children)
+            {
+                if (Consume(child, ref position))
+                {
+                    name = foundName;
+                    return true;
+                }
+            }
+            name = foundName;
+            return false;
+        }
+
+        private static string San(string input, int maxLen = 80)
+        {
+            char[] invalid = Path.GetInvalidFileNameChars();
+            StringBuilder builder = new StringBuilder(input.Length);
+            foreach (char c in input)
+            {
+                builder.Append(invalid.Contains(c) ? '_' : c);
+            }
+            string result = builder.ToString().Trim();
+            if (string.IsNullOrEmpty(result)) return "noname";
+            return result.Length > maxLen ? result.Substring(0, maxLen) : result;
         }
 
         private static (List<ObjectEntry> Objects, int RecLen)? TryParseObjects(byte[] meta, int pos, int count, bool littleEndian, int dataAreaLen)
         {
-            (string Name, int RecLen, Func<int, (int Path, uint Off, uint Size, int Type)> Reader)[] layouts =
-                new (string Name, int RecLen, Func<int, (int Path, uint Off, uint Size, int Type)> Reader)[]
+            (string Name, int RecLen, Func<int, (int PathId, uint Offset, uint Size, int TypeIndex, int? ClassId, int? Flags)> Reader)[] layouts =
+                new (string Name, int RecLen, Func<int, (int PathId, uint Offset, uint Size, int TypeIndex, int? ClassId, int? Flags)> Reader)[]
             {
-                ("p-o-s-t-16", 16, p => (ReadInt32(meta, ref p, littleEndian), ReadUInt32(meta, ref p, littleEndian), ReadUInt32(meta, ref p, littleEndian), ReadInt32(meta, ref p, littleEndian))),
-                ("p-o-s-t-20", 20, p => { int path = ReadInt32(meta, ref p, littleEndian); uint off = ReadUInt32(meta, ref p, littleEndian); uint size = ReadUInt32(meta, ref p, littleEndian); int type = ReadInt32(meta, ref p, littleEndian); p += 4; return (path, off, size, type); }),
-                ("p-o-s-t-24", 24, p => { int path = ReadInt32(meta, ref p, littleEndian); uint off = ReadUInt32(meta, ref p, littleEndian); uint size = ReadUInt32(meta, ref p, littleEndian); int type = ReadInt32(meta, ref p, littleEndian); p += 8; return (path, off, size, type); }),
-                ("o-s-t-p-16", 16, p => { uint off = ReadUInt32(meta, ref p, littleEndian); uint size = ReadUInt32(meta, ref p, littleEndian); int type = ReadInt32(meta, ref p, littleEndian); int path = ReadInt32(meta, ref p, littleEndian); return (path, off, size, type); }),
-                ("p-t-o-s-16", 16, p => { int path = ReadInt32(meta, ref p, littleEndian); int type = ReadInt32(meta, ref p, littleEndian); uint off = ReadUInt32(meta, ref p, littleEndian); uint size = ReadUInt32(meta, ref p, littleEndian); return (path, off, size, type); })
+                ("p-o-s-t-16", 16, p => (ReadInt32(meta, ref p, littleEndian), ReadUInt32(meta, ref p, littleEndian), ReadUInt32(meta, ref p, littleEndian), ReadInt32(meta, ref p, littleEndian), null, null)),
+                ("p-o-s-t-20", 20, p => { int path = ReadInt32(meta, ref p, littleEndian); uint off = ReadUInt32(meta, ref p, littleEndian); uint size = ReadUInt32(meta, ref p, littleEndian); int type = ReadInt32(meta, ref p, littleEndian); uint tail = ReadUInt32(meta, ref p, littleEndian); int classId = (int)(tail & 0xFFFF); int flags = (int)(tail >> 16); return (path, off, size, type, classId, flags); }),
+                ("p-o-s-t-24", 24, p => { int path = ReadInt32(meta, ref p, littleEndian); uint off = ReadUInt32(meta, ref p, littleEndian); uint size = ReadUInt32(meta, ref p, littleEndian); int type = ReadInt32(meta, ref p, littleEndian); p += 4; uint tail = ReadUInt32(meta, ref p, littleEndian); int classId = (int)(tail & 0xFFFF); int flags = (int)(tail >> 16); return (path, off, size, type, classId, flags); }),
+                ("o-s-t-p-16", 16, p => { uint off = ReadUInt32(meta, ref p, littleEndian); uint size = ReadUInt32(meta, ref p, littleEndian); int type = ReadInt32(meta, ref p, littleEndian); int path = ReadInt32(meta, ref p, littleEndian); return (path, off, size, type, null, null); }),
+                ("p-t-o-s-16", 16, p => { int path = ReadInt32(meta, ref p, littleEndian); int type = ReadInt32(meta, ref p, littleEndian); uint off = ReadUInt32(meta, ref p, littleEndian); uint size = ReadUInt32(meta, ref p, littleEndian); return (path, off, size, type, null, null); })
             };
 
             double bestValid = 0.0;
@@ -284,8 +444,8 @@ namespace FusionFall_Mod.Core
                 for (int i = 0; i < count; i += step)
                 {
                     int p = pos + i * layout.RecLen;
-                    (int Path, uint Off, uint Size, int Type) r = layout.Reader(p);
-                    bool cond = r.Off < dataAreaLen && r.Size > 0 && r.Off + r.Size <= dataAreaLen && (r.Off % 4 == 0);
+                    (int PathId, uint Offset, uint Size, int TypeIndex, int? ClassId, int? Flags) r = layout.Reader(p);
+                    bool cond = r.Offset < dataAreaLen && r.Size > 0 && r.Offset + r.Size <= dataAreaLen && (r.Offset % 4 == 0);
                     if (cond)
                     {
                         ok++;
@@ -303,32 +463,36 @@ namespace FusionFall_Mod.Core
                 for (int i = 0; i < count; i++)
                 {
                     int p = pos + i * layout.RecLen;
-                    (int Path, uint Off, uint Size, int Type) r = layout.Reader(p);
-                    bool cond = r.Off < dataAreaLen && r.Size > 0 && r.Off + r.Size <= dataAreaLen && (r.Off % 4 == 0);
+                    (int PathId, uint Offset, uint Size, int TypeIndex, int? ClassId, int? Flags) r = layout.Reader(p);
+                    bool cond = r.Offset < dataAreaLen && r.Size > 0 && r.Offset + r.Size <= dataAreaLen && (r.Offset % 4 == 0);
                     if (cond)
                     {
                         okFull++;
-                        if (r.Off >= (uint)lastOff)
+                        if (r.Offset >= (uint)lastOff)
                         {
                             mono++;
-                            lastOff = (int)r.Off;
+                            lastOff = (int)r.Offset;
                         }
                         objs.Add(new ObjectEntry
                         {
-                            PathId = r.Path,
-                            OffsetRel = r.Off,
+                            PathId = r.PathId,
+                            OffsetRel = r.Offset,
                             Size = r.Size,
-                            TypeIndex = r.Type
+                            TypeIndex = r.TypeIndex,
+                            ClassId = r.ClassId,
+                            Flags = r.Flags
                         });
                     }
                     else
                     {
                         objs.Add(new ObjectEntry
                         {
-                            PathId = r.Path,
-                            OffsetRel = r.Off,
+                            PathId = r.PathId,
+                            OffsetRel = r.Offset,
                             Size = r.Size,
-                            TypeIndex = r.Type
+                            TypeIndex = r.TypeIndex,
+                            ClassId = r.ClassId,
+                            Flags = r.Flags
                         });
                     }
                 }

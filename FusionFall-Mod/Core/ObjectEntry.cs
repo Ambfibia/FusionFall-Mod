@@ -9,6 +9,8 @@ namespace FusionFall_Mod.Core
         public uint OffsetRel { get; set; }
         public uint Size { get; set; }
         public int TypeIndex { get; set; }
+        public int? ClassId { get; set; }
+        public int? Flags { get; set; }
     }
 }
 
