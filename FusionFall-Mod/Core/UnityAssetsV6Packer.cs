@@ -197,47 +197,6 @@ namespace FusionFall_Mod.Core
             return best;
         }
 
-        // ---- DTOs ----
-        private struct HeaderV6
-        {
-            public uint MetaSize;
-            public uint FileSize;
-            public uint Version;
-            public uint DataOffset;
-            public uint EndianTag;
-        }
-
-        private class ObjectEntry
-        {
-            public long PathId { get; set; }
-            public uint OffsetRel { get; set; }
-            public uint Size { get; set; }
-            public int TypeIndex { get; set; }
-        }
-
-        private class ObjectTable
-        {
-            public int TableOffset { get; set; }
-            public bool PathIdIs64 { get; set; }
-            public int EntrySize { get; set; }
-            public int Count { get; set; }
-            public List<ObjectEntry> Entries { get; set; } = new();
-            public ObjectEntry this[int i] => Entries[i];
-        }
-
-        private class Manifest
-        {
-            public int Version { get; set; }
-            public int MetaSize { get; set; }
-            public long FileSize { get; set; }
-            public int DataBase { get; set; }
-            public int TableOffset { get; set; }
-            public int EntrySize { get; set; }
-            public bool PathIdIs64 { get; set; }
-            public int Count { get; set; }
-            public List<ObjectEntry> Entries { get; set; } = new();
-        }
-
         // --- Публичный API для сборки ---
         public static void BuildAssetsV6(string inDir, string outAssetsPath)
         {
