@@ -1,5 +1,6 @@
 using FusionFall_Mod.Core.Compression;
 using FusionFall_Mod.Models;
+using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 
@@ -64,50 +65,6 @@ namespace FusionFall_Mod.Core
                 return new FileEntry(fileName, fullPath, size);
             }).ToList();
         }
-
-        // ----------------- Вспомогательный компаратор -----------------
-        sealed class NaturalComparer : IComparer<string>
-        {
-            public static readonly NaturalComparer Instance = new();
-
-            public int Compare(string? x, string? y)
-            {
-                if (ReferenceEquals(x, y)) return 0;
-                if (x is null) return -1;
-                if (y is null) return 1;
-
-                int i = 0, j = 0;
-                while (i < x.Length && j < y.Length)
-                {
-                    char cx = x[i], cy = y[j];
-                    bool dx = char.IsDigit(cx), dy = char.IsDigit(cy);
-
-                    if (dx && dy)
-                    {
-                        // сравнение числовых блоков
-                        long vx = 0, vy = 0;
-                        int si = i, sj = j;
-                        while (i < x.Length && char.IsDigit(x[i])) { vx = vx * 10 + (x[i] - '0'); i++; }
-                        while (j < y.Length && char.IsDigit(y[j])) { vy = vy * 10 + (y[j] - '0'); j++; }
-                        int cmpNum = vx.CompareTo(vy);
-                        if (cmpNum != 0) return cmpNum;
-
-                        // если числа равны — сравним длину (меньше ведущих нулей → короче → раньше)
-                        int lenX = i - si, lenY = j - sj;
-                        if (lenX != lenY) return lenX.CompareTo(lenY);
-                        continue;
-                    }
-
-                    // регистронезависимое сравнение
-                    int cmp = char.ToUpperInvariant(cx).CompareTo(char.ToUpperInvariant(cy));
-                    if (cmp != 0) return cmp;
-
-                    i++; j++;
-                }
-                return (x.Length - i).CompareTo(y.Length - j);
-            }
-        }
-
 
         /// <summary>
         /// Формирование данных заголовка без сжатия.
