@@ -431,7 +431,7 @@ namespace FusionFall_Mod.Core
             List<ObjectEntry>? bestObjects = null;
             int bestRec = 0;
 
-            foreach (var layout in layouts)
+            foreach ((string Name, int RecLen, Func<int, (int PathId, uint Offset, uint Size, int TypeIndex, int? ClassId, int? Flags)> Reader) layout in layouts)
             {
                 int end = pos + count * layout.RecLen;
                 if (end > meta.Length)
