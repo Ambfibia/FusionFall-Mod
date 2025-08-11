@@ -6,6 +6,8 @@ using FusionFall_Mod.Models;
 using MsBox.Avalonia;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
+using System.Drawing;
 using System.Text;
 using System.Windows.Input;
 
@@ -25,6 +27,8 @@ namespace FusionFall_Mod.ViewModels
             ExtractCommand = new AsyncCommand(ExtractFiles);
             PackAssetsCommand = new AsyncCommand(PackAssets);
             UnpackAssetsCommand = new AsyncCommand(UnpackAssets);
+            ExtractFontCommand = new AsyncCommand(ExtractFont);
+            PackFontCommand = new AsyncCommand(PackFont);
         }
 
         public string ConsoleText => _console.ToString();
@@ -33,6 +37,8 @@ namespace FusionFall_Mod.ViewModels
         public ICommand ExtractCommand { get; }
         public ICommand PackAssetsCommand { get; }
         public ICommand UnpackAssetsCommand { get; }
+        public ICommand ExtractFontCommand { get; }
+        public ICommand PackFontCommand { get; }
 
         // Добавление сообщения в консоль
         private void Log(string message)
@@ -214,6 +220,129 @@ namespace FusionFall_Mod.ViewModels
             {
                 Log($"Ошибка распаковки: {ex.Message}");
                 await MessageBoxManager.GetMessageBoxStandard("Error", $"Unpacking failed:\n{ex.Message}").ShowAsync();
+            }
+        }
+
+        // Показ диалога выбора файла шрифта BIN
+        private async Task<string?> ShowBinFileDialog()
+        {
+            FilePickerOpenOptions filePickerOpenOptions = new FilePickerOpenOptions
+            {
+                AllowMultiple = false,
+                FileTypeFilter = new List<FilePickerFileType>
+                {
+                    new FilePickerFileType("Unity font bin") { Patterns = new[] { "*.bin" } },
+                    new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
+                }
+            };
+            IReadOnlyList<IStorageFile> files = await _window.StorageProvider.OpenFilePickerAsync(filePickerOpenOptions);
+            if (files == null || files.Count == 0)
+            {
+                return null;
+            }
+            return files[0].TryGetLocalPath();
+        }
+
+        // Показ диалога выбора файла шрифта TTF
+        private async Task<string?> ShowTtfFileDialog()
+        {
+            FilePickerOpenOptions filePickerOpenOptions = new FilePickerOpenOptions
+            {
+                AllowMultiple = false,
+                FileTypeFilter = new List<FilePickerFileType>
+                {
+                    new FilePickerFileType("TrueType font") { Patterns = new[] { "*.ttf" } },
+                    new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
+                }
+            };
+            IReadOnlyList<IStorageFile> files = await _window.StorageProvider.OpenFilePickerAsync(filePickerOpenOptions);
+            if (files == null || files.Count == 0)
+            {
+                return null;
+            }
+            return files[0].TryGetLocalPath();
+        }
+
+        // Извлечение TTF из BIN
+        private async Task ExtractFont()
+        {
+            string? inputBinPath = await ShowBinFileDialog();
+            if (inputBinPath == null)
+            {
+                return;
+            }
+            FilePickerSaveOptions filePickerSaveOptions = new FilePickerSaveOptions
+            {
+                FileTypeChoices = new List<FilePickerFileType>
+                {
+                    new FilePickerFileType("TrueType font") { Patterns = new[] { "*.ttf" } },
+                    new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
+                }
+            };
+            IStorageFile? saveFile = await _window.StorageProvider.SaveFilePickerAsync(filePickerSaveOptions);
+            string? outputTtfPath = saveFile?.TryGetLocalPath();
+            if (string.IsNullOrWhiteSpace(outputTtfPath))
+            {
+                return;
+            }
+            try
+            {
+                Log("Начало извлечения TTF.");
+            byte[] binBytes = await File.ReadAllBytesAsync(inputBinPath);
+            (byte[] TtfBytes, Bitmap Atlas) result = UnityFontBinFunctions.BinToTtf(binBytes);
+            await File.WriteAllBytesAsync(outputTtfPath, result.TtfBytes);
+            result.Atlas.Dispose();
+            Log("Извлечение завершено.");
+                await MessageBoxManager.GetMessageBoxStandard("Success", "Font extracted successfully.").ShowAsync();
+            }
+            catch (Exception ex)
+            {
+                Log($"Ошибка извлечения: {ex.Message}");
+                await MessageBoxManager.GetMessageBoxStandard("Error", $"Font extraction failed:\n{ex.Message}").ShowAsync();
+            }
+        }
+
+        // Сборка BIN из TTF
+        private async Task PackFont()
+        {
+            string? templateBinPath = await ShowBinFileDialog();
+            if (templateBinPath == null)
+            {
+                return;
+            }
+            string? inputTtfPath = await ShowTtfFileDialog();
+            if (inputTtfPath == null)
+            {
+                return;
+            }
+            FilePickerSaveOptions filePickerSaveOptions = new FilePickerSaveOptions
+            {
+                FileTypeChoices = new List<FilePickerFileType>
+                {
+                    new FilePickerFileType("Unity font bin") { Patterns = new[] { "*.bin" } },
+                    new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
+                }
+            };
+            IStorageFile? saveFile = await _window.StorageProvider.SaveFilePickerAsync(filePickerSaveOptions);
+            string? outputBinPath = saveFile?.TryGetLocalPath();
+            if (string.IsNullOrWhiteSpace(outputBinPath))
+            {
+                return;
+            }
+            try
+            {
+                Log("Начало сборки BIN.");
+            byte[] templateBytes = await File.ReadAllBytesAsync(templateBinPath);
+            byte[] ttfBytes = await File.ReadAllBytesAsync(inputTtfPath);
+            byte[] result = UnityFontBinFunctions.PackBinFromTtf(templateBytes, ttfBytes, 13, 1024, 432, UnityFontBinFunctions.EncodeDxt5WithNvcompress);
+            await File.WriteAllBytesAsync(outputBinPath, result);
+            Log("Сборка BIN завершена.");
+                await MessageBoxManager.GetMessageBoxStandard("Success", "BIN packed successfully.").ShowAsync();
+            }
+            catch (Exception ex)
+            {
+                Log($"Ошибка сборки BIN: {ex.Message}");
+                await MessageBoxManager.GetMessageBoxStandard("Error", $"BIN packing failed:\n{ex.Message}").ShowAsync();
             }
         }
 

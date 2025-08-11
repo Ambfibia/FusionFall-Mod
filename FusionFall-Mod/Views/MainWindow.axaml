@@ -13,6 +13,8 @@
             <Button Content="Extract Files" Margin="0,5" Command="{Binding ExtractCommand}"/>
             <Button Content="Pack (.assets)" Margin="0,5" Command="{Binding PackAssetsCommand}"/>
             <Button Content="Extract .assets" Margin="0,5" Command="{Binding UnpackAssetsCommand}"/>
+            <Button Content="Extract TTF from BIN" Margin="0,5" Command="{Binding ExtractFontCommand}"/>
+            <Button Content="Pack BIN from TTF" Margin="0,5" Command="{Binding PackFontCommand}"/>
         </StackPanel>
         <TextBox Grid.Row="1" Margin="0,10,0,0" Text="{Binding ConsoleText}" IsReadOnly="True"
                  AcceptsReturn="True"/>
