@@ -332,11 +332,11 @@ namespace FusionFall_Mod.ViewModels
             try
             {
                 Log("Начало сборки BIN.");
-            byte[] templateBytes = await File.ReadAllBytesAsync(templateBinPath);
-            byte[] ttfBytes = await File.ReadAllBytesAsync(inputTtfPath);
-            byte[] result = UnityFontBinFunctions.PackBinFromTtf(templateBytes, ttfBytes, 13, 1024, 432, UnityFontBinFunctions.EncodeDxt5WithNvcompress);
-            await File.WriteAllBytesAsync(outputBinPath, result);
-            Log("Сборка BIN завершена.");
+                byte[] templateBytes = await File.ReadAllBytesAsync(templateBinPath);
+                byte[] ttfBytes = await File.ReadAllBytesAsync(inputTtfPath);
+                byte[] result = UnityFontBinFunctions.PackBinFromTtf(templateBytes, ttfBytes, 13, 1024, 432, (Bitmap atlas) => UnityFontBinFunctions.EncodeDxt5WithNvcompress(atlas));
+                await File.WriteAllBytesAsync(outputBinPath, result);
+                Log("Сборка BIN завершена.");
                 await MessageBoxManager.GetMessageBoxStandard("Success", "BIN packed successfully.").ShowAsync();
             }
             catch (Exception ex)
