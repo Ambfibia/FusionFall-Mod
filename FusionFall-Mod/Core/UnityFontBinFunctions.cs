@@ -558,7 +558,7 @@ namespace FusionFall_Mod.Core
             sub.U32(16 + 12u * (uint)groups.Count);
             sub.U32(0);
             sub.U32((uint)groups.Count);
-            foreach ((uint startChar, uint endChar, uint startGlyphId) in groups)
+            foreach ((uint startChar, uint endChar, uint startGlyphId) g in groups)
             {
                 sub.U32(g.Item1);
                 sub.U32(g.Item2);
